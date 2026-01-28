@@ -1,56 +1,84 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
   View,
-  TextInput,
-  TouchableOpacity,
   FlatList,
   Alert,
   SafeAreaView,
+  TouchableOpacity,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
+import EntryForm from './components/EntryForm';
 
 export default function App() {
-  const [title, setTitle] = useState('');
-  const [mood, setMood] = useState('neutral');
   const [entries, setEntries] = useState([]);
+  const [editingEntry, setEditingEntry] = useState(null);
 
-  const moods = [
-    { label: '😢', value: 'sad' },
-    { label: '😐', value: 'neutral' },
-    { label: '😊', value: 'happy' },
-    { label: '🤩', value: 'excited' },
-  ];
+  useEffect(() => {
+    loadEntries();
+  }, []);
 
-  const addEntry = () => {
-    if (!title.trim()) {
-      Alert.alert("Error", "Please enter a title");
-      return;
+  useEffect(() => {
+    saveToStorage();
+  }, [entries]);
+
+  const loadEntries = async () => {
+    try {
+      const jsonValue = await AsyncStorage.getItem('@diary_storage');
+      if (jsonValue !== null) {
+        setEntries(JSON.parse(jsonValue));
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Failed to load data');
     }
-    const newEntry = {
-      id: Date.now().toString(),
-      title,
-      mood,
-      date: new Date().toLocaleString(),
-    };
-    setEntries([newEntry, ...entries]);
-    setTitle('');
-    setMood('neutral');
   };
 
-  const exportData = async (format) => {
+  const saveToStorage = async () => {
+    try {
+      const jsonValue = JSON.stringify(entries);
+      await AsyncStorage.setItem('@diary_storage', jsonValue);
+    } catch (e) {
+      console.error('Save error', e);
+    }
+  };
+
+  const handleSaveEntry = entryData => {
+    const index = entries.findIndex(e => e.id === entryData.id);
+    if (index > -1) {
+      const updatedEntries = [...entries];
+      updatedEntries[index] = entryData;
+      setEntries(updatedEntries);
+    } else {
+      setEntries([entryData, ...entries]);
+    }
+    setEditingEntry(null);
+  };
+
+  const deleteEntry = id => {
+    setEntries(entries.filter(e => e.id !== id));
+    setEditingEntry(null);
+  };
+
+  const exportData = async format => {
     if (entries.length === 0) {
-      Alert.alert("Empty", "No entries to export!");
+      Alert.alert('Empty', 'Nothing to export!');
       return;
     }
 
-    const content = format === 'json' 
-      ? JSON.stringify(entries, null, 2) 
-      : entries.map(e => `[${e.date}] ${e.mood.toUpperCase()}: ${e.title}`).join('\n');
+    const content =
+      format === 'json'
+        ? JSON.stringify(entries, null, 2)
+        : entries
+          .map(
+            e =>
+              `[${new Date(e.date).toLocaleString()}] ${e.title}\n${e.body}`,
+          )
+          .join('\n\n');
 
-    const path = `${RNFS.DocumentDirectoryPath}/diary_export.${format}`;
+    const path = `${RNFS.DocumentDirectoryPath}/diary_backup.${format}`;
 
     try {
       await RNFS.writeFile(path, content, 'utf8');
@@ -58,82 +86,133 @@ export default function App() {
         url: `file://${path}`,
         type: format === 'json' ? 'application/json' : 'text/plain',
       });
-    } catch (error) {
-      console.log('Export error:', error);
+    } catch (e) {
+      console.log(e);
     }
   };
 
-  const renderItem = ({ item }) => (
-    <View style={styles.entryItem}>
-      <Text style={styles.entryDate}>{item.date}</Text>
-      <Text style={styles.entryTitle}>
-        {moods.find(m => m.value === item.mood)?.label} {item.title}
-      </Text>
-    </View>
-  );
+  const renderItem = ({ item }) => {
+    const moods = { sad: '😢', neutral: '😐', happy: '😊', excited: '🤩' };
+    return (
+      <TouchableOpacity
+        style={styles.entryCard}
+        onPress={() => setEditingEntry(item)}
+      >
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardEmoji}>{moods[item.mood]}</Text>
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>{item.title}</Text>
+            <Text style={styles.cardDate}>
+              {new Date(item.date).toLocaleString()}
+            </Text>
+          </View>
+        </View>
+        <Text numberOfLines={2} style={styles.cardPreview}>
+          {item.body}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>My Simple Diary</Text>
+      <Text style={styles.headerTitle}>My Persistent Diary</Text>
 
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="What's on your mind?"
-          value={title}
-          onChangeText={setTitle}
-        />
-        
-        <View style={styles.moodPicker}>
-          {moods.map((m) => (
-            <TouchableOpacity 
-              key={m.value} 
-              onPress={() => setMood(m.value)}
-              style={[styles.moodButton, mood === m.value && styles.selectedMood]}
-            >
-              <Text style={styles.moodEmoji}>{m.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+      <EntryForm
+        onSave={handleSaveEntry}
+        editingEntry={editingEntry}
+        onCancelEdit={() => setEditingEntry(null)}
+        onDelete={deleteEntry}
+      />
 
-        <TouchableOpacity style={styles.addButton} onPress={addEntry}>
-          <Text style={styles.buttonText}>Save Entry</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.exportRow}>
-        <TouchableOpacity onPress={() => exportData('txt')} style={styles.exportBtn}>
+      <View style={styles.exportSection}>
+        <TouchableOpacity
+          onPress={() => exportData('txt')}
+          style={styles.miniBtn}
+        >
           <Text>Export TXT</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => exportData('json')} style={styles.exportBtn}>
+        <TouchableOpacity
+          onPress={() => exportData('json')}
+          style={styles.miniBtn}
+        >
           <Text>Export JSON</Text>
         </TouchableOpacity>
       </View>
 
       <FlatList
         data={entries}
-        keyExtractor={(item) => item.id}
+        keyExtractor={item => item.id}
         renderItem={renderItem}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        contentContainerStyle={styles.listContent}
       />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5', paddingHorizontal: 20 },
-  header: { fontSize: 24, fontWeight: 'bold', marginVertical: 20, textAlign: 'center' },
-  inputContainer: { backgroundColor: '#fff', padding: 15, borderRadius: 10, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
-  input: { borderBottomWidth: 1, borderColor: '#ddd', marginBottom: 15, padding: 8, color: '#000' },
-  moodPicker: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 15 },
-  moodButton: { padding: 10, borderRadius: 20, borderWidth: 1, borderColor: 'transparent' },
-  selectedMood: { borderColor: '#007AFF', backgroundColor: '#e1f0ff' },
-  moodEmoji: { fontSize: 24 },
-  addButton: { backgroundColor: '#007AFF', padding: 12, borderRadius: 8, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: 'bold' },
-  exportRow: { flexDirection: 'row', justifyContent: 'center', marginVertical: 15 },
-  exportBtn: { marginHorizontal: 10, padding: 8, backgroundColor: '#ddd', borderRadius: 5 },
-  entryItem: { backgroundColor: '#fff', padding: 15, borderRadius: 8, marginTop: 10 },
-  entryDate: { fontSize: 12, color: '#666' },
-  entryTitle: { fontSize: 18, marginTop: 5, color: '#000' }
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 15,
+  },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginVertical: 20,
+    color: '#1a1a1a',
+  },
+  exportSection: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginVertical: 15,
+    gap: 10,
+  },
+  miniBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#e9ecef',
+    borderRadius: 6,
+  },
+  listContent: {
+    paddingBottom: 30,
+  },
+  entryCard: {
+    backgroundColor: '#fff',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  cardEmoji: {
+    fontSize: 28,
+    marginRight: 12,
+  },
+  cardHeaderText: {
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#2d3436',
+  },
+  cardDate: {
+    fontSize: 12,
+    color: '#b2bec3',
+  },
+  cardPreview: {
+    fontSize: 14,
+    color: '#636e72',
+    lineHeight: 20,
+  },
 });
