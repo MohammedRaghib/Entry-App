@@ -10,12 +10,13 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/Theme';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 const moods = [
-    { label: '😢', value: 'sad' },
+    { label: '😭', value: 'sad' },
     { label: '😐', value: 'neutral' },
-    { label: '😊', value: 'happy' },
-    { label: '🤩', value: 'excited' },
+    { label: '🙂', value: 'happy' },
+    { label: '😎', value: 'excited' },
 ];
 
 export default function EntryForm({ route, navigation }) {
@@ -57,11 +58,71 @@ export default function EntryForm({ route, navigation }) {
         }
     };
 
+    const currentMoodLabel = moods.find(m => m.value === mood)?.label || '😊';
+
     return (
         <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+            <View style={styles.headerRow}>
+                <TouchableOpacity
+                    onPress={() => setShowPicker(true)}
+                    style={styles.dateSelector}
+                >
+                    <Text style={styles.dateText}>
+                        {date.toLocaleDateString('en-GB', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                        })}
+                        ,{' '}
+                        {date.toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                        })}
+                    </Text>
+                    <Ionicons
+                        name="chevron-down"
+                        size={16}
+                        color={theme.colors.textSecondary}
+                    />
+                </TouchableOpacity>
+
+                <View style={styles.actionIcons}>
+                    {editingEntry && (
+                        <TouchableOpacity
+                            onPress={() => {
+                                onDelete(editingEntry.id);
+                                navigation.goBack();
+                            }}
+                        >
+                            <Ionicons
+                                name="trash-outline"
+                                size={24}
+                                color={theme.colors.error}
+                            />
+                        </TouchableOpacity>
+                    )}
+                    <TouchableOpacity onPress={handleSave}>
+                        <Ionicons
+                            name="checkmark-sharp"
+                            size={28}
+                            color={theme.colors.accent}
+                        />
+                    </TouchableOpacity>
+                </View>
+            </View>
+
+            <TouchableOpacity style={styles.moodBadge}>
+                <View style={styles.moodSquare}>
+                    <Text style={styles.moodEmoji}>{currentMoodLabel}</Text>
+                    <View style={styles.plusOverlay}>
+                        <Ionicons name="add" size={12} color={theme.colors.textSecondary} />
+                    </View>
+                </View>
+            </TouchableOpacity>
+
             <TextInput
                 style={styles.titleInput}
-                placeholder="Entry Title"
+                placeholder="Title"
                 placeholderTextColor={theme.colors.textSecondary}
                 value={title}
                 onChangeText={setTitle}
@@ -69,31 +130,12 @@ export default function EntryForm({ route, navigation }) {
 
             <TextInput
                 style={styles.bodyInput}
-                placeholder="Write your story..."
+                placeholder="Diary entry"
                 placeholderTextColor={theme.colors.textSecondary}
                 value={body}
                 onChangeText={setBody}
                 multiline
             />
-
-            <View style={styles.moodContainer}>
-                {moods.map(m => (
-                    <TouchableOpacity
-                        key={m.value}
-                        onPress={() => setMood(m.value)}
-                        style={[styles.moodTab, mood === m.value && styles.moodTabActive]}
-                    >
-                        <Text style={styles.moodIcon}>{m.label}</Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-
-            <TouchableOpacity
-                style={styles.datePickerBtn}
-                onPress={() => setShowPicker(true)}
-            >
-                <Text style={styles.dateLabel}>📅 {date.toLocaleString()}</Text>
-            </TouchableOpacity>
 
             {showPicker && (
                 <DateTimePicker
@@ -103,26 +145,6 @@ export default function EntryForm({ route, navigation }) {
                     onChange={handleDateChange}
                 />
             )}
-
-            <View style={styles.btnRow}>
-                <TouchableOpacity style={styles.primaryBtn} onPress={handleSave}>
-                    <Text style={styles.btnText}>
-                        {editingEntry ? 'Update' : 'Save Entry'}
-                    </Text>
-                </TouchableOpacity>
-
-                {editingEntry && (
-                    <TouchableOpacity
-                        style={styles.dangerBtn}
-                        onPress={() => {
-                            onDelete(editingEntry.id);
-                            navigation.goBack();
-                        }}
-                    >
-                        <Text style={styles.btnText}>Delete</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
         </ScrollView>
     );
 }
@@ -131,73 +153,62 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: theme.colors.background,
-        padding: theme.spacing.lg,
+        paddingHorizontal: theme.spacing.lg,
+        paddingTop: theme.spacing.lg,
     },
-    titleInput: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: theme.colors.textPrimary,
-        borderBottomWidth: 1,
-        borderColor: theme.colors.border,
-        paddingVertical: 10,
-        marginBottom: 20,
-    },
-    bodyInput: {
-        fontSize: theme.typography.bodySize,
-        color: theme.colors.textPrimary,
-        backgroundColor: theme.colors.surface,
-        borderRadius: 10,
-        padding: 15,
-        height: 250,
-        textAlignVertical: 'top',
-        lineHeight: theme.typography.lineHeight,
-    },
-    moodContainer: {
+    headerRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginVertical: 20,
-    },
-    moodTab: {
-        padding: 10,
-        borderRadius: 12,
-        backgroundColor: theme.colors.surface,
-    },
-    moodTabActive: {
-        borderWidth: 1,
-        borderColor: theme.colors.accent
-    },
-    moodIcon: { fontSize: 24 },
-    datePickerBtn: {
-        backgroundColor: theme.colors.surface,
-        padding: 15,
-        borderRadius: 10,
         alignItems: 'center',
-        marginBottom: 20,
+        marginBottom: theme.spacing.xl,
     },
-    dateLabel: {
-        color: theme.colors.textSecondary,
-        fontWeight: '600'
-    },
-    btnRow: {
+    dateSelector: {
         flexDirection: 'row',
-        gap: 10
-    },
-    primaryBtn: {
-        flex: 2,
-        backgroundColor: theme.colors.accent,
-        padding: 16,
-        borderRadius: 12,
         alignItems: 'center',
+        gap: 4,
     },
-    dangerBtn: {
-        flex: 1,
-        backgroundColor: theme.colors.error,
-        padding: 16,
-        borderRadius: 12,
+    dateText: {
+        color: theme.colors.textPrimary,
+        fontSize: 16,
+    },
+    actionIcons: {
+        flexDirection: 'row',
         alignItems: 'center',
+        gap: 20,
     },
-    btnText: {
-        color: theme.colors.background,
-        fontWeight: 'bold'
+    moodBadge: {
+        marginBottom: theme.spacing.xl,
+        alignSelf: 'flex-start',
+    },
+    moodSquare: {
+        width: 50,
+        height: 50,
+        backgroundColor: theme.colors.surface,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    moodEmoji: {
+        fontSize: 24,
+    },
+    plusOverlay: {
+        position: 'absolute',
+        bottom: 4,
+        right: 4,
+    },
+    titleInput: {
+        fontSize: 28,
+        fontWeight: '500',
+        color: theme.colors.textPrimary,
+        marginBottom: theme.spacing.md,
+    },
+    bodyInput: {
+        fontSize: 20,
+        color: theme.colors.textSecondary,
+        textAlignVertical: 'top',
+        minHeight: 300,
+        lineHeight: 28,
     },
 });
