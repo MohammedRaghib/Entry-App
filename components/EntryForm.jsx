@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     StyleSheet,
     Text,
     View,
     TextInput,
     TouchableOpacity,
-    Alert,
     Platform,
     ScrollView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { theme } from '../constants/Theme';
 
 const moods = [
     { label: '😢', value: 'sad' },
@@ -18,41 +18,30 @@ const moods = [
     { label: '🤩', value: 'excited' },
 ];
 
-export default function EntryForm({ onSave, editingEntry, onCancelEdit, onDelete }) {
-    const [title, setTitle] = useState('');
-    const [body, setBody] = useState('');
-    const [mood, setMood] = useState('neutral');
-    const [date, setDate] = useState(new Date());
+export default function EntryForm({ route, navigation }) {
+    const { onSave, onDelete, editingEntry } = route.params;
+
+    const [title, setTitle] = useState(editingEntry?.title || '');
+    const [body, setBody] = useState(editingEntry?.body || '');
+    const [mood, setMood] = useState(editingEntry?.mood || 'neutral');
+    const [date, setDate] = useState(new Date(editingEntry?.date || Date.now()));
 
     const [showPicker, setShowPicker] = useState(false);
     const [pickerMode, setPickerMode] = useState('date');
 
-    useEffect(() => {
-        if (editingEntry) {
-            setTitle(editingEntry.title);
-            setBody(editingEntry.body);
-            setMood(editingEntry.mood);
-            setDate(new Date(editingEntry.date));
-        } else {
-            resetForm();
-        }
-    }, [editingEntry]);
-
-    const resetForm = () => {
-        setTitle('');
-        setBody('');
-        setMood('neutral');
-        setDate(new Date());
+    const handleSave = () => {
+        onSave({
+            id: editingEntry ? editingEntry.id : Date.now().toString(),
+            title,
+            body,
+            mood,
+            date: date.toISOString(),
+        });
+        navigation.goBack();
     };
 
     const handleDateChange = (event, selectedDate) => {
-        if (event.type === 'dismissed') {
-            setShowPicker(false);
-            return;
-        }
-
         const currentDate = selectedDate || date;
-
         if (Platform.OS === 'android') {
             if (pickerMode === 'date') {
                 setDate(currentDate);
@@ -68,38 +57,27 @@ export default function EntryForm({ onSave, editingEntry, onCancelEdit, onDelete
         }
     };
 
-    const handleSave = () => {
-        onSave({
-            id: editingEntry ? editingEntry.id : Date.now().toString(),
-            title,
-            body,
-            mood,
-            date: date.toISOString(),
-        });
-
-        resetForm();
-    };
-
     return (
-        <ScrollView style={styles.formBox} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
             <TextInput
-                style={styles.textInput}
+                style={styles.titleInput}
                 placeholder="Entry Title"
+                placeholderTextColor={theme.colors.textSecondary}
                 value={title}
                 onChangeText={setTitle}
             />
 
             <TextInput
-                style={[styles.textInput, styles.areaInput]}
+                style={styles.bodyInput}
                 placeholder="Write your story..."
+                placeholderTextColor={theme.colors.textSecondary}
                 value={body}
                 onChangeText={setBody}
                 multiline
-                numberOfLines={5}
             />
 
             <View style={styles.moodContainer}>
-                {moods.map((m) => (
+                {moods.map(m => (
                     <TouchableOpacity
                         key={m.value}
                         onPress={() => setMood(m.value)}
@@ -112,10 +90,7 @@ export default function EntryForm({ onSave, editingEntry, onCancelEdit, onDelete
 
             <TouchableOpacity
                 style={styles.datePickerBtn}
-                onPress={() => {
-                    setPickerMode(Platform.OS === 'ios' ? 'datetime' : 'date');
-                    setShowPicker(true);
-                }}
+                onPress={() => setShowPicker(true)}
             >
                 <Text style={styles.dateLabel}>📅 {date.toLocaleString()}</Text>
             </TouchableOpacity>
@@ -125,113 +100,104 @@ export default function EntryForm({ onSave, editingEntry, onCancelEdit, onDelete
                     value={date}
                     mode={pickerMode}
                     is24Hour={true}
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                     onChange={handleDateChange}
                 />
             )}
 
             <View style={styles.btnRow}>
                 <TouchableOpacity style={styles.primaryBtn} onPress={handleSave}>
-                    <Text style={styles.btnText}>{editingEntry ? 'Update' : 'Save Entry'}</Text>
+                    <Text style={styles.btnText}>
+                        {editingEntry ? 'Update' : 'Save Entry'}
+                    </Text>
                 </TouchableOpacity>
 
                 {editingEntry && (
                     <TouchableOpacity
                         style={styles.dangerBtn}
-                        onPress={() => onDelete(editingEntry.id)}
+                        onPress={() => {
+                            onDelete(editingEntry.id);
+                            navigation.goBack();
+                        }}
                     >
                         <Text style={styles.btnText}>Delete</Text>
                     </TouchableOpacity>
                 )}
             </View>
-
-            {editingEntry && (
-                <TouchableOpacity onPress={onCancelEdit} style={styles.cancelWrap}>
-                    <Text style={styles.cancelTxt}>Cancel Edit</Text>
-                </TouchableOpacity>
-            )}
         </ScrollView>
     );
 }
 
 const styles = StyleSheet.create({
-    formBox: {
-        backgroundColor: '#fff',
-        padding: 18,
-        borderRadius: 15,
-        maxHeight: 480,
+    container: {
+        flex: 1,
+        backgroundColor: theme.colors.background,
+        padding: theme.spacing.lg,
     },
-    textInput: {
+    titleInput: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: theme.colors.textPrimary,
         borderBottomWidth: 1,
-        borderColor: '#f1f2f6',
+        borderColor: theme.colors.border,
         paddingVertical: 10,
-        fontSize: 16,
-        color: '#2d3436',
-        marginBottom: 15,
+        marginBottom: 20,
     },
-    areaInput: {
-        borderWidth: 1,
-        borderRadius: 8,
-        padding: 10,
-        height: 100,
+    bodyInput: {
+        fontSize: theme.typography.bodySize,
+        color: theme.colors.textPrimary,
+        backgroundColor: theme.colors.surface,
+        borderRadius: 10,
+        padding: 15,
+        height: 250,
         textAlignVertical: 'top',
+        lineHeight: theme.typography.lineHeight,
     },
     moodContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginVertical: 15,
+        marginVertical: 20,
     },
     moodTab: {
         padding: 10,
         borderRadius: 12,
-        backgroundColor: '#f8f9fa',
+        backgroundColor: theme.colors.surface,
     },
     moodTabActive: {
-        backgroundColor: '#dfe6e9',
         borderWidth: 1,
-        borderColor: '#0984e3',
+        borderColor: theme.colors.accent
     },
-    moodIcon: {
-        fontSize: 24,
-    },
+    moodIcon: { fontSize: 24 },
     datePickerBtn: {
-        backgroundColor: '#f1f2f6',
-        padding: 12,
-        borderRadius: 8,
+        backgroundColor: theme.colors.surface,
+        padding: 15,
+        borderRadius: 10,
         alignItems: 'center',
         marginBottom: 20,
     },
     dateLabel: {
-        color: '#636e72',
-        fontWeight: '600',
+        color: theme.colors.textSecondary,
+        fontWeight: '600'
     },
     btnRow: {
         flexDirection: 'row',
-        gap: 10,
+        gap: 10
     },
     primaryBtn: {
         flex: 2,
-        backgroundColor: '#0984e3',
-        padding: 14,
-        borderRadius: 10,
+        backgroundColor: theme.colors.accent,
+        padding: 16,
+        borderRadius: 12,
         alignItems: 'center',
     },
     dangerBtn: {
         flex: 1,
-        backgroundColor: '#d63031',
-        padding: 14,
-        borderRadius: 10,
+        backgroundColor: theme.colors.error,
+        padding: 16,
+        borderRadius: 12,
         alignItems: 'center',
     },
     btnText: {
-        color: '#fff',
-        fontWeight: 'bold',
-    },
-    cancelWrap: {
-        marginTop: 12,
-        alignItems: 'center',
-    },
-    cancelTxt: {
-        color: '#0984e3',
+        color: theme.colors.background,
+        fontWeight: 'bold'
     },
 });
