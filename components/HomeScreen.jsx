@@ -32,13 +32,17 @@ export default function HomeScreen({ navigation }) {
 
     const handleSaveEntry = entryData => {
         setEntries(prev => {
+            let newEntries;
             const index = prev.findIndex(e => e.id === entryData.id);
+
             if (index > -1) {
-                const updated = [...prev];
-                updated[index] = entryData;
-                return updated;
+                newEntries = [...prev];
+                newEntries[index] = entryData;
+            } else {
+                newEntries = [entryData, ...prev];
             }
-            return [entryData, ...prev];
+
+            return newEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
         });
     };
 
