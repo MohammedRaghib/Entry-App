@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     StyleSheet,
     Text,
@@ -10,7 +10,6 @@ import {
     Alert,
     KeyboardAvoidingView,
     Modal,
-    FlatList,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/Theme';
@@ -35,9 +34,11 @@ export default function EntryForm({ route, navigation }) {
     const [pickerMode, setPickerMode] = useState('date');
     const [isMoodModalVisible, setIsMoodModalVisible] = useState(false);
 
+    const isDeleting = useRef(false);
+
     useEffect(() => {
-        const unsubscribe = navigation.addListener('beforeRemove', e => {
-            if (title.trim() || body.trim()) {
+        const unsubscribe = navigation.addListener('beforeRemove', () => {
+            if (!isDeleting.current && (title.trim() || body.trim())) {
                 handleSave(false);
             }
         });
@@ -45,8 +46,12 @@ export default function EntryForm({ route, navigation }) {
     }, [navigation, title, body, mood, date]);
 
     const handleSave = (shouldNavigate = true) => {
+        const uniqueId = editingEntry
+            ? editingEntry.id
+            : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
         onSave({
-            id: editingEntry ? editingEntry.id : Date.now().toString(),
+            id: uniqueId,
             title,
             body,
             mood,
@@ -62,8 +67,8 @@ export default function EntryForm({ route, navigation }) {
                 text: 'Delete',
                 style: 'destructive',
                 onPress: () => {
+                    isDeleting.current = true;
                     onDelete(editingEntry.id);
-                    navigation.setParams({ editingEntry: null });
                     navigation.goBack();
                 },
             },
@@ -165,7 +170,6 @@ export default function EntryForm({ route, navigation }) {
                     placeholderTextColor={theme.colors.textSecondary}
                     value={title}
                     onChangeText={setTitle}
-                    multiline={false}
                 />
 
                 <TextInput
