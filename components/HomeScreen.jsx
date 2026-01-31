@@ -14,25 +14,13 @@ import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import { theme } from '../constants/Theme';
 import appConfig from '../app.json';
+import DeviceInfo from 'react-native-device-info';
 
 export default function HomeScreen({ navigation }) {
     const [entries, setEntries] = useState([]);
     const [modalVisible, setModalVisible] = useState(false);
 
-    useEffect(() => {
-        loadEntries();
-    }, []);
-
-    useEffect(() => {
-        const saveToStorage = async () => {
-            try {
-                await AsyncStorage.setItem('@diary_storage', JSON.stringify(entries));
-            } catch (e) {
-                console.error(e);
-            }
-        };
-        saveToStorage();
-    }, [entries]);
+    const appVersion = DeviceInfo.getVersion();
 
     const loadEntries = async () => {
         try {
@@ -128,6 +116,21 @@ export default function HomeScreen({ navigation }) {
         );
     };
 
+    useEffect(() => {
+        loadEntries();
+    }, []);
+
+    useEffect(() => {
+        const saveToStorage = async () => {
+            try {
+                await AsyncStorage.setItem('@diary_storage', JSON.stringify(entries));
+            } catch (e) {
+                console.error(e);
+            }
+        };
+        saveToStorage();
+    }, [entries]);
+
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
@@ -155,7 +158,7 @@ export default function HomeScreen({ navigation }) {
             />
 
             <View style={styles.footer}>
-                <Text style={styles.versionText}>Version {appConfig.version}</Text>
+                <Text style={styles.versionText}>Version {appVersion}</Text>
             </View>
 
             <Modal
