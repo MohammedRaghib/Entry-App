@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     StyleSheet,
     Text,
@@ -10,6 +10,7 @@ import {
     Alert,
     KeyboardAvoidingView,
     Modal,
+    BackHandler,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/Theme';
@@ -25,42 +26,74 @@ const moods = [
 export default function EntryForm({ route, navigation }) {
     const { onSave, onDelete, editingEntry } = route.params;
 
-    const [title, setTitle] = useState(editingEntry?.title || '');
-    const [body, setBody] = useState(editingEntry?.body || '');
+    const titleRef = useRef(editingEntry?.title || '');
+    const bodyRef = useRef(editingEntry?.body || '');
+
     const [mood, setMood] = useState(editingEntry?.mood || 'neutral');
     const [date, setDate] = useState(new Date(editingEntry?.date || Date.now()));
-
     const [showPicker, setShowPicker] = useState(false);
     const [pickerMode, setPickerMode] = useState('date');
     const [isMoodModalVisible, setIsMoodModalVisible] = useState(false);
 
+    const [isDirty, setIsDirty] = useState(false);
+
     const isDeleting = useRef(false);
+    const scrollViewRef = useRef(null);
 
-    useEffect(() => {
-        const unsubscribe = navigation.addListener('beforeRemove', () => {
-            if (!isDeleting.current && (title.trim() || body.trim())) {
-                handleSave(false);
-            }
-        });
-        return unsubscribe;
-    }, [navigation, title, body, mood, date]);
+    const handleScrollViewLayout = useCallback(() => {
+        scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    }, []);
 
-    const handleSave = (shouldNavigate = true) => {
+    const handleSave = useCallback((shouldNavigate = true) => {
         const uniqueId = editingEntry
             ? editingEntry.id
             : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
         onSave({
             id: uniqueId,
-            title,
-            body,
+            title: titleRef.current,
+            body: bodyRef.current,
             mood,
             date: date.toISOString(),
         });
-        if (shouldNavigate) navigation.goBack();
-    };
 
-    const confirmDelete = () => {
+        setIsDirty(false);
+
+        if (shouldNavigate) navigation.goBack();
+    }, [editingEntry, mood, date, onSave, navigation]);
+
+    useEffect(() => {
+        const handleBack = () => {
+            if (isDirty) {
+                handleSave(false);
+                return true;
+            }
+            return false;
+        };
+
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBack);
+
+        const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+            if (isDeleting.current) return; 
+            if (isDirty) {
+                e.preventDefault();
+                handleSave(false);
+            }
+        });
+
+        return () => {
+            backHandler.remove();
+            unsubscribe();
+        };
+    }, [isDirty, handleSave, navigation]);
+
+    const handleMoodChange = useCallback((value) => {
+        setMood(value);
+        setIsDirty(true);
+        setIsMoodModalVisible(false);
+    }, []);
+
+    const confirmDelete = useCallback(() => {
         Alert.alert('Delete Entry', 'Are you sure you want to delete this?', [
             { text: 'Cancel', style: 'cancel' },
             {
@@ -73,9 +106,9 @@ export default function EntryForm({ route, navigation }) {
                 },
             },
         ]);
-    };
+    }, [editingEntry, onDelete, navigation]);
 
-    const handleDateChange = (event, selectedDate) => {
+    const handleDateChange = useCallback((event, selectedDate) => {
         const currentDate = selectedDate || date;
         if (Platform.OS === 'android') {
             if (pickerMode === 'date') {
@@ -90,19 +123,23 @@ export default function EntryForm({ route, navigation }) {
             setDate(currentDate);
             setShowPicker(false);
         }
-    };
+        setIsDirty(true);
+    }, [date, pickerMode]);
 
     const currentMoodLabel = moods.find(m => m.value === mood)?.label || '🙂';
 
     return (
         <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior="padding"
             style={styles.container}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 56}
         >
             <ScrollView
-                keyboardShouldPersistTaps="handled"
+                ref={scrollViewRef}
+                keyboardShouldPersistTaps="always"
                 contentContainerStyle={styles.scrollContent}
+                onLayout={handleScrollViewLayout}
+                nestedScrollEnabled={true}
             >
                 <View style={styles.headerRow}>
                     <TouchableOpacity
@@ -129,7 +166,7 @@ export default function EntryForm({ route, navigation }) {
                     </TouchableOpacity>
 
                     <View style={styles.actionIcons}>
-                        {editingEntry && (
+                        {editingEntry && !isDirty && (
                             <TouchableOpacity onPress={confirmDelete}>
                                 <Ionicons
                                     name="trash-outline"
@@ -138,13 +175,15 @@ export default function EntryForm({ route, navigation }) {
                                 />
                             </TouchableOpacity>
                         )}
-                        <TouchableOpacity onPress={() => handleSave(true)}>
-                            <Ionicons
-                                name="checkmark-sharp"
-                                size={28}
-                                color={theme.colors.accent}
-                            />
-                        </TouchableOpacity>
+                        {isDirty && (
+                            <TouchableOpacity onPress={() => handleSave(true)}>
+                                <Ionicons
+                                    name="checkmark-sharp"
+                                    size={28}
+                                    color={theme.colors.accent}
+                                />
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </View>
 
@@ -168,18 +207,18 @@ export default function EntryForm({ route, navigation }) {
                     style={styles.titleInput}
                     placeholder="Title"
                     placeholderTextColor={theme.colors.textSecondary}
-                    value={title}
-                    onChangeText={setTitle}
+                    defaultValue={titleRef.current}
+                    onChangeText={(text) => { titleRef.current = text; setIsDirty(true); }}
                 />
 
                 <TextInput
                     style={styles.bodyInput}
                     placeholder="Diary entry"
                     placeholderTextColor={theme.colors.textSecondary}
-                    value={body}
-                    onChangeText={setBody}
+                    defaultValue={bodyRef.current}
+                    onChangeText={(text) => { bodyRef.current = text; setIsDirty(true); }}
                     multiline
-                    scrollEnabled={false}
+                    textAlignVertical="top"
                 />
 
                 <Modal
@@ -203,10 +242,7 @@ export default function EntryForm({ route, navigation }) {
                                             styles.moodOption,
                                             mood === m.value && styles.selectedMood,
                                         ]}
-                                        onPress={() => {
-                                            setMood(m.value);
-                                            setIsMoodModalVisible(false);
-                                        }}
+                                        onPress={() => handleMoodChange(m.value)}
                                     >
                                         <Text style={styles.moodOptionEmoji}>{m.label}</Text>
                                     </TouchableOpacity>
