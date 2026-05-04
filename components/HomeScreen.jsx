@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     StyleSheet,
     Text,
@@ -8,59 +8,107 @@ import {
     TouchableOpacity,
     Alert,
     Modal,
+    ActivityIndicator,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
-import { theme } from '../constants/Theme';
-import appConfig from '../app.json';
 import DeviceInfo from 'react-native-device-info';
+import * as DocumentPicker from '@react-native-documents/picker';
+import { theme } from '../constants/Theme';
+import {
+    initDB,
+    getEntriesPaginated,
+    insertOrUpdateEntry,
+    removeEntry,
+    getAllEntriesForExport,
+    importEntries,
+} from '../db';
 
 export default function HomeScreen({ navigation }) {
     const [entries, setEntries] = useState([]);
     const [modalVisible, setModalVisible] = useState(false);
+    const [page, setPage] = useState(0);
+    const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [hasMore, setHasMore] = useState(true);
 
+    const PAGE_SIZE = 15;
     const appVersion = DeviceInfo.getVersion();
 
-    const loadEntries = async () => {
-        try {
-            const jsonValue = await AsyncStorage.getItem('@diary_storage');
-            if (jsonValue) setEntries(JSON.parse(jsonValue));
-        } catch (e) {
-            console.error(e);
-        }
+    const fetchEntries = useCallback(
+        async (isInitial = false) => {
+            if (loading || (!hasMore && !isInitial)) return;
+            setLoading(true);
+            const currentOffset = isInitial ? 0 : page * PAGE_SIZE;
+            try {
+                const data = await getEntriesPaginated(PAGE_SIZE, currentOffset);
+                if (data.length < PAGE_SIZE) setHasMore(false);
+                if (isInitial) {
+                    setEntries(data);
+                    setPage(1);
+                } else {
+                    setEntries(prev => [...prev, ...data]);
+                    setPage(prev => prev + 1);
+                }
+            } catch (error) {
+                Alert.alert('Error', 'Failed to load entries');
+            } finally {
+                setLoading(false);
+                setRefreshing(false);
+            }
+        },
+        [loading, hasMore, page],
+    );
+
+    const onRefresh = () => {
+        setRefreshing(true);
+        setHasMore(true);
+        fetchEntries(true);
     };
 
     const handleSaveEntry = entryData => {
-        setEntries(prev => {
-            const index = prev.findIndex(e => e.id === entryData.id);
-            let newEntries;
-            if (index > -1) {
-                newEntries = [...prev];
-                newEntries[index] = entryData;
-            } else {
-                newEntries = [entryData, ...prev];
-            }
-            return [...newEntries].sort(
-                (a, b) => new Date(b.date) - new Date(a.date),
-            );
-        });
+        insertOrUpdateEntry(entryData);
+        onRefresh();
     };
 
     const deleteEntry = id => {
-        setEntries(prevEntries => prevEntries.filter(e => e.id !== id));
+        removeEntry(id);
+        setEntries(prev => prev.filter(e => e.id !== id));
+    };
+
+    const handleImport = async () => {
+        try {
+            const res = await DocumentPicker.pickSingle({
+                type: [DocumentPicker.types.json],
+            });
+            const fileContent = await RNFS.readFile(res.uri, 'utf8');
+            const importedData = JSON.parse(fileContent);
+
+            if (Array.isArray(importedData)) {
+                importEntries(importedData);
+                Alert.alert('Success', 'Journal entries imported successfully.');
+                setModalVisible(false);
+                onRefresh();
+            } else {
+                throw new Error('Invalid format');
+            }
+        } catch (err) {
+            if (!DocumentPicker.isCancel(err)) {
+                Alert.alert('Import Error', 'Please select a valid JSON journal file.');
+            }
+        }
     };
 
     const handleExport = async type => {
-        setModalVisible(false);
+        const allEntries = getAllEntriesForExport();
         let content = '';
         let fileName = `journal_export_${Date.now()}`;
         let extension = type === 'json' ? '.json' : '.txt';
 
         if (type === 'json') {
-            content = JSON.stringify(entries, null, 2);
+            content = JSON.stringify(allEntries, null, 2);
         } else {
-            content = entries
+            content = allEntries
                 .map(
                     e =>
                         `Date: ${new Date(e.date).toLocaleDateString()}\nTitle: ${e.title
@@ -73,13 +121,13 @@ export default function HomeScreen({ navigation }) {
 
         try {
             await RNFS.writeFile(path, content, 'utf8');
-            const shareOptions = {
+            await Share.open({
                 title: 'Export Journal',
                 url: `file://${path}`,
                 type: type === 'json' ? 'application/json' : 'text/plain',
                 saveToFiles: true,
-            };
-            await Share.open(shareOptions);
+            });
+            setModalVisible(false);
         } catch (error) {
             if (error.message !== 'User did not share') {
                 Alert.alert('Error', 'Could not export file.');
@@ -117,19 +165,9 @@ export default function HomeScreen({ navigation }) {
     };
 
     useEffect(() => {
-        loadEntries();
+        initDB();
+        fetchEntries(true);
     }, []);
-
-    useEffect(() => {
-        const saveToStorage = async () => {
-            try {
-                await AsyncStorage.setItem('@diary_storage', JSON.stringify(entries));
-            } catch (e) {
-                console.error(e);
-            }
-        };
-        saveToStorage();
-    }, [entries]);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -137,7 +175,7 @@ export default function HomeScreen({ navigation }) {
                 <View>
                     <Text style={styles.headerTitle}>My Journal</Text>
                     <TouchableOpacity onPress={() => setModalVisible(true)}>
-                        <Text style={styles.exportBtnText}>Export Data</Text>
+                        <Text style={styles.exportBtnText}>Backup & Sync</Text>
                     </TouchableOpacity>
                 </View>
                 <TouchableOpacity
@@ -155,6 +193,15 @@ export default function HomeScreen({ navigation }) {
                 keyExtractor={item => item.id}
                 renderItem={renderItem}
                 contentContainerStyle={styles.list}
+                onEndReached={() => fetchEntries()}
+                onEndReachedThreshold={0.5}
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                ListFooterComponent={() =>
+                    loading && !refreshing ? (
+                        <ActivityIndicator style={{ margin: 20 }} />
+                    ) : null
+                }
             />
 
             <View style={styles.footer}>
@@ -162,31 +209,67 @@ export default function HomeScreen({ navigation }) {
             </View>
 
             <Modal
-                transparent={true}
+                transparent
                 visible={modalVisible}
                 animationType="fade"
                 onRequestClose={() => setModalVisible(false)}
             >
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Choose Format</Text>
+                        <Text style={styles.modalTitle}>Manage Data</Text>
+
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Export</Text>
+                            <TouchableOpacity
+                                style={styles.modalBtn}
+                                onPress={() => handleExport('json')}
+                            >
+                                <Text style={styles.modalBtnText}>
+                                    Export as JSON (Full Backup)
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.modalBtn}
+                                onPress={() => handleExport('txt')}
+                            >
+                                <Text style={styles.modalBtnText}>
+                                    Export as TXT (Readable)
+                                </Text>
+                            </TouchableOpacity>
+                            <Text style={styles.warningText}>
+                                * TXT files cannot be imported back.
+                            </Text>
+                        </View>
+
+                        <View style={[styles.section, { marginTop: 20 }]}>
+                            <Text style={styles.sectionTitle}>Import</Text>
+                            <TouchableOpacity
+                                style={[
+                                    styles.modalBtn,
+                                    {
+                                        backgroundColor: theme.colors.surface,
+                                        borderWidth: 1,
+                                        borderColor: theme.colors.accent,
+                                    },
+                                ]}
+                                onPress={handleImport}
+                            >
+                                <Text
+                                    style={[styles.modalBtnText, { color: theme.colors.accent }]}
+                                >
+                                    Import JSON File
+                                </Text>
+                            </TouchableOpacity>
+                            <Text style={styles.infoText}>
+                                Only .json backup files are supported.
+                            </Text>
+                        </View>
 
                         <TouchableOpacity
-                            style={styles.modalBtn}
-                            onPress={() => handleExport('txt')}
-                        >
-                            <Text style={styles.modalBtnText}>Text (.txt)</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={styles.modalBtn}
-                            onPress={() => handleExport('json')}
-                        >
-                            <Text style={styles.modalBtnText}>Data (.json)</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.modalBtn, { backgroundColor: theme.colors.error }]}
+                            style={[
+                                styles.modalBtn,
+                                { backgroundColor: theme.colors.error, marginTop: 30 },
+                            ]}
                             onPress={() => setModalVisible(false)}
                         >
                             <Text style={styles.modalBtnText}>Cancel</Text>
@@ -278,28 +361,49 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     modalContent: {
-        width: '80%',
+        width: '85%',
         backgroundColor: theme.colors.surface,
         borderRadius: 20,
         padding: 20,
-        alignItems: 'center',
     },
     modalTitle: {
-        fontSize: 20,
+        fontSize: 22,
         fontWeight: 'bold',
         color: theme.colors.textPrimary,
         marginBottom: 20,
+        textAlign: 'center',
+    },
+    section: {
+        width: '100%'
+    },
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: theme.colors.textSecondary,
+        marginBottom: 10,
+        textTransform: 'uppercase',
     },
     modalBtn: {
         backgroundColor: theme.colors.accent,
         width: '100%',
-        padding: 12,
+        padding: 14,
         borderRadius: 10,
-        marginBottom: 10,
+        marginBottom: 8,
         alignItems: 'center',
     },
     modalBtnText: {
         color: 'white',
-        fontWeight: 'bold',
+        fontWeight: 'bold'
+    },
+    warningText: {
+        fontSize: 11,
+        color: theme.colors.error,
+        fontStyle: 'italic'
+    },
+    infoText: {
+        fontSize: 11,
+        color: theme.colors.textSecondary,
+        textAlign: 'center',
+        marginTop: 4,
     },
 });

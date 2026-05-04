@@ -34,7 +34,6 @@ export default function EntryForm({ route, navigation }) {
     const [showPicker, setShowPicker] = useState(false);
     const [pickerMode, setPickerMode] = useState('date');
     const [isMoodModalVisible, setIsMoodModalVisible] = useState(false);
-
     const [isDirty, setIsDirty] = useState(false);
 
     const isDeleting = useRef(false);
@@ -45,12 +44,10 @@ export default function EntryForm({ route, navigation }) {
     }, []);
 
     const handleSave = useCallback((shouldNavigate = true) => {
-        const uniqueId = editingEntry
-            ? editingEntry.id
-            : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const entryId = editingEntry?.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
         onSave({
-            id: uniqueId,
+            id: entryId,
             title: titleRef.current,
             body: bodyRef.current,
             mood,
@@ -58,7 +55,6 @@ export default function EntryForm({ route, navigation }) {
         });
 
         setIsDirty(false);
-
         if (shouldNavigate) navigation.goBack();
     }, [editingEntry, mood, date, onSave, navigation]);
 
@@ -74,10 +70,11 @@ export default function EntryForm({ route, navigation }) {
         const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBack);
 
         const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-            if (isDeleting.current) return; 
+            if (isDeleting.current) return;
             if (isDirty) {
                 e.preventDefault();
                 handleSave(false);
+                navigation.dispatch(e.data.action);
             }
         });
 
@@ -118,12 +115,13 @@ export default function EntryForm({ route, navigation }) {
                 setDate(currentDate);
                 setShowPicker(false);
                 setPickerMode('date');
+                setIsDirty(true);
             }
         } else {
             setDate(currentDate);
             setShowPicker(false);
+            setIsDirty(true);
         }
-        setIsDirty(true);
     }, [date, pickerMode]);
 
     const currentMoodLabel = moods.find(m => m.value === mood)?.label || '🙂';
@@ -143,7 +141,10 @@ export default function EntryForm({ route, navigation }) {
             >
                 <View style={styles.headerRow}>
                     <TouchableOpacity
-                        onPress={() => setShowPicker(true)}
+                        onPress={() => {
+                            setPickerMode('date');
+                            setShowPicker(true);
+                        }}
                         style={styles.dateSelector}
                     >
                         <Text style={styles.dateText}>
@@ -166,7 +167,7 @@ export default function EntryForm({ route, navigation }) {
                     </TouchableOpacity>
 
                     <View style={styles.actionIcons}>
-                        {editingEntry && !isDirty && (
+                        {editingEntry && (
                             <TouchableOpacity onPress={confirmDelete}>
                                 <Ionicons
                                     name="trash-outline"
@@ -175,15 +176,13 @@ export default function EntryForm({ route, navigation }) {
                                 />
                             </TouchableOpacity>
                         )}
-                        {isDirty && (
-                            <TouchableOpacity onPress={() => handleSave(true)}>
-                                <Ionicons
-                                    name="checkmark-sharp"
-                                    size={28}
-                                    color={theme.colors.accent}
-                                />
-                            </TouchableOpacity>
-                        )}
+                        <TouchableOpacity onPress={() => handleSave(true)}>
+                            <Ionicons
+                                name="checkmark-sharp"
+                                size={28}
+                                color={isDirty ? theme.colors.accent : theme.colors.textSecondary}
+                            />
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -208,7 +207,10 @@ export default function EntryForm({ route, navigation }) {
                     placeholder="Title"
                     placeholderTextColor={theme.colors.textSecondary}
                     defaultValue={titleRef.current}
-                    onChangeText={(text) => { titleRef.current = text; setIsDirty(true); }}
+                    onChangeText={(text) => {
+                        titleRef.current = text;
+                        if (!isDirty) setIsDirty(true);
+                    }}
                 />
 
                 <TextInput
@@ -216,7 +218,10 @@ export default function EntryForm({ route, navigation }) {
                     placeholder="Diary entry"
                     placeholderTextColor={theme.colors.textSecondary}
                     defaultValue={bodyRef.current}
-                    onChangeText={(text) => { bodyRef.current = text; setIsDirty(true); }}
+                    onChangeText={(text) => {
+                        bodyRef.current = text;
+                        if (!isDirty) setIsDirty(true);
+                    }}
                     multiline
                     textAlignVertical="top"
                 />
