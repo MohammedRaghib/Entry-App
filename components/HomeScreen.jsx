@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     StyleSheet,
     Text,
@@ -9,6 +9,7 @@ import {
     Alert,
     Modal,
     ActivityIndicator,
+    TextInput,
 } from 'react-native';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
@@ -31,18 +32,20 @@ export default function HomeScreen({ navigation }) {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [hasMore, setHasMore] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const PAGE_SIZE = 15;
     const appVersion = DeviceInfo.getVersion();
+    const typingTimeoutRef = useRef(null);
 
     const fetchEntries = useCallback(
-        async (isInitial = false) => {
+        async (isInitial = false, currentSearch = searchQuery) => {
             if (loading || (!hasMore && !isInitial)) return;
             setLoading(true);
 
             const currentOffset = isInitial ? 0 : page * PAGE_SIZE;
             try {
-                const data = await getEntriesPaginated(PAGE_SIZE, currentOffset);
+                const data = await getEntriesPaginated(PAGE_SIZE, currentOffset, currentSearch);
 
                 if (isInitial) {
                     setEntries(data);
@@ -64,7 +67,7 @@ export default function HomeScreen({ navigation }) {
                 setRefreshing(false);
             }
         },
-        [loading, hasMore, page],
+        [loading, hasMore, page, searchQuery],
     );
 
     const onRefresh = () => {
@@ -172,6 +175,19 @@ export default function HomeScreen({ navigation }) {
     };
 
     useEffect(() => {
+        if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+        }
+
+        typingTimeoutRef.current = setTimeout(() => {
+            setHasMore(true);
+            fetchEntries(true, searchQuery);
+        }, 400);
+
+        return () => clearTimeout(typingTimeoutRef.current);
+    }, [searchQuery]);
+
+    useEffect(() => {
         const setup = async () => {
             await initDB();
             fetchEntries(true);
@@ -196,6 +212,17 @@ export default function HomeScreen({ navigation }) {
                 >
                     <Text style={styles.addBtnText}>+ New Entry</Text>
                 </TouchableOpacity>
+            </View>
+
+            <View style={styles.searchContainer}>
+                <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search titles or content..."
+                    placeholderTextColor={theme.colors.textSecondary}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    clearButtonMode="while-editing"
+                />
             </View>
 
             <FlatList
@@ -322,6 +349,20 @@ const styles = StyleSheet.create({
     addBtnText: {
         color: theme.colors.background,
         fontWeight: 'bold',
+    },
+    searchContainer: {
+        paddingHorizontal: 20,
+        paddingBottom: 15,
+    },
+    searchInput: {
+        backgroundColor: theme.colors.surface,
+        height: 48,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        fontSize: 16,
+        color: theme.colors.textPrimary,
+        borderWidth: 1,
+        borderColor: theme.colors.accent + '20',
     },
     list: {
         padding: 15,

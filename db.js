@@ -8,11 +8,19 @@ export const initDB = () => {
   );
 };
 
-export const getEntriesPaginated = (limit, offset) => {
-  const result = db.execute(
-    'SELECT * FROM entries ORDER BY date DESC LIMIT ? OFFSET ?',
-    [limit, offset],
-  );
+export const getEntriesPaginated = (limit, offset, searchQuery = '') => {
+  let query = 'SELECT * FROM entries';
+  const params = [];
+
+  if (searchQuery) {
+    query += ' WHERE title LIKE ? OR body LIKE ?';
+    params.push(`%${searchQuery}%`, `%${searchQuery}%`);
+  }
+
+  query += ' ORDER BY date DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  const result = db.execute(query, params);
   return result.rows?._array || [];
 };
 
