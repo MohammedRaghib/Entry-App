@@ -13,7 +13,7 @@ import {
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import DeviceInfo from 'react-native-device-info';
-import * as DocumentPicker from '@react-native-documents/picker';
+import { pick, types, isCancel } from '@react-native-documents/picker';
 import { theme } from '../constants/Theme';
 import {
     initDB,
@@ -39,16 +39,23 @@ export default function HomeScreen({ navigation }) {
         async (isInitial = false) => {
             if (loading || (!hasMore && !isInitial)) return;
             setLoading(true);
+
             const currentOffset = isInitial ? 0 : page * PAGE_SIZE;
             try {
                 const data = await getEntriesPaginated(PAGE_SIZE, currentOffset);
-                if (data.length < PAGE_SIZE) setHasMore(false);
+
                 if (isInitial) {
                     setEntries(data);
                     setPage(1);
+                    setHasMore(data.length === PAGE_SIZE);
                 } else {
-                    setEntries(prev => [...prev, ...data]);
+                    setEntries(prev => {
+                        const existingIds = new Set(prev.map(e => e.id));
+                        const newEntries = data.filter(e => !existingIds.has(e.id));
+                        return [...prev, ...newEntries];
+                    });
                     setPage(prev => prev + 1);
+                    if (data.length < PAGE_SIZE) setHasMore(false);
                 }
             } catch (error) {
                 Alert.alert('Error', 'Failed to load entries');
@@ -78,8 +85,8 @@ export default function HomeScreen({ navigation }) {
 
     const handleImport = async () => {
         try {
-            const res = await DocumentPicker.pickSingle({
-                type: [DocumentPicker.types.json],
+            const [res] = await pick({
+                type: [types.json],
             });
             const fileContent = await RNFS.readFile(res.uri, 'utf8');
             const importedData = JSON.parse(fileContent);
@@ -93,7 +100,7 @@ export default function HomeScreen({ navigation }) {
                 throw new Error('Invalid format');
             }
         } catch (err) {
-            if (!DocumentPicker.isCancel(err)) {
+            if (!isCancel(err)) {
                 Alert.alert('Import Error', 'Please select a valid JSON journal file.');
             }
         }
@@ -165,8 +172,11 @@ export default function HomeScreen({ navigation }) {
     };
 
     useEffect(() => {
-        initDB();
-        fetchEntries(true);
+        const setup = async () => {
+            await initDB();
+            fetchEntries(true);
+        };
+        setup();
     }, []);
 
     return (
