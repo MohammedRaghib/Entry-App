@@ -160,8 +160,8 @@ export default function HomeScreen({ navigation }) {
         const moodsMap = { sad: '😭', neutral: '😐', happy: '🙂', excited: '😎' };
         const dateObj = new Date(item.date);
 
-        const formattedDate = dateObj.toLocaleDateString('en-GB', {
-            weekday: 'short',
+        const absoluteDay = dateObj.toLocaleDateString('en-US', {
+            weekday: 'long',
             day: 'numeric',
             month: 'short',
         });
@@ -184,15 +184,13 @@ export default function HomeScreen({ navigation }) {
                 }
             >
                 <View style={styles.cardHeader}>
-                    <Text style={styles.cardEmoji}>{moodsMap[item.mood]}</Text>
-                    <View>
-                        <Text style={styles.cardTitle}>{item.title || ''}</Text>
-                        <Text style={styles.cardDate}>
-                            {formattedDate}, {formattedTime}
-                        </Text>
+                    <Text style={styles.cardEmoji}>{moodsMap[item.mood] || '😐'}</Text>
+                    <View style={styles.cardHeaderMeta}>
+                        <Text style={styles.cardTopDate}>{dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}, {formattedTime}</Text>
+                        {item.title && <Text style={styles.cardTitle}>{item.title}</Text>}
                     </View>
                 </View>
-                <Text numberOfLines={2} style={styles.cardPreview}>
+                <Text numberOfLines={3} style={styles.cardPreview}>
                     {item.body}
                 </Text>
             </TouchableOpacity>
@@ -224,30 +222,32 @@ export default function HomeScreen({ navigation }) {
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
                 <View>
-                    <Text style={styles.headerTitle}>My Journal</Text>
-                    <TouchableOpacity onPress={() => setModalVisible(true)}>
-                        <Text style={styles.exportBtnText}>Backup & Sync</Text>
-                    </TouchableOpacity>
+                    <View style={styles.headerTitleRow}>
+                        <Text style={styles.headerTitle}>Hello!</Text>
+                        <TouchableOpacity style={styles.syncIconButton} onPress={() => setModalVisible(true)}>
+                            <View style={styles.customSyncIcon}>
+                                <View style={styles.syncLine} />
+                                <View style={[styles.syncLine, styles.syncLineShort]} />
+                                <View style={styles.syncLine} />
+                            </View>
+                        </TouchableOpacity>
+                    </View>
+                    <Text style={styles.versionText}>Version {appVersion}</Text>
                 </View>
-                <TouchableOpacity
-                    style={styles.addBtn}
-                    onPress={() =>
-                        navigation.navigate('Entry', { onSave: handleSaveEntry })
-                    }
-                >
-                    <Text style={styles.addBtnText}>+ New Entry</Text>
-                </TouchableOpacity>
             </View>
 
             <View style={styles.searchContainer}>
-                <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search titles or content..."
-                    placeholderTextColor={theme.colors.textSecondary}
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    clearButtonMode="while-editing"
-                />
+                <View style={styles.searchWrapper}>
+                    <Text style={styles.searchIcon}>🔍</Text>
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search entries..."
+                        placeholderTextColor={theme.colors.textSecondary}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        clearButtonMode="while-editing"
+                    />
+                </View>
             </View>
 
             <FlatList
@@ -261,14 +261,17 @@ export default function HomeScreen({ navigation }) {
                 onRefresh={onRefresh}
                 ListFooterComponent={() =>
                     loading && !refreshing ? (
-                        <ActivityIndicator style={{ margin: 20 }} />
+                        <ActivityIndicator style={{ margin: theme.spacing.lg }} color={theme.colors.accent} />
                     ) : null
                 }
             />
 
-            <View style={styles.footer}>
-                <Text style={styles.versionText}>Version {appVersion}</Text>
-            </View>
+            <TouchableOpacity
+                style={styles.floatingAddBtn}
+                onPress={() => navigation.navigate('Entry', { onSave: handleSaveEntry })}
+            >
+                <Text style={styles.floatingAddBtnText}>+</Text>
+            </TouchableOpacity>
 
             <Modal
                 transparent
@@ -303,22 +306,20 @@ export default function HomeScreen({ navigation }) {
                             </Text>
                         </View>
 
-                        <View style={[styles.section, { marginTop: 20 }]}>
+                        <View style={[styles.section, { marginTop: theme.spacing.lg }]}>
                             <Text style={styles.sectionTitle}>Import</Text>
                             <TouchableOpacity
                                 style={[
                                     styles.modalBtn,
                                     {
-                                        backgroundColor: theme.colors.surface,
+                                        backgroundColor: theme.colors.background,
                                         borderWidth: 1,
                                         borderColor: theme.colors.accent,
                                     },
                                 ]}
                                 onPress={handleImport}
                             >
-                                <Text
-                                    style={[styles.modalBtnText, { color: theme.colors.accent }]}
-                                >
+                                <Text style={[styles.modalBtnText, { color: theme.colors.accent }]}>
                                     Import JSON File
                                 </Text>
                             </TouchableOpacity>
@@ -328,11 +329,7 @@ export default function HomeScreen({ navigation }) {
                         </View>
 
                         <TouchableOpacity
-                            style={[
-                                bg = { backgroundColor: theme.colors.error, marginTop: 30 },
-                                styles.modalBtn,
-                                { backgroundColor: theme.colors.error, marginTop: 30 },
-                            ]}
+                            style={[styles.modalBtn, { backgroundColor: theme.colors.error, marginTop: theme.spacing.xl }]}
                             onPress={() => setModalVisible(false)}
                         >
                             <Text style={styles.modalBtnText}>Cancel</Text>
@@ -350,137 +347,195 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.background,
     },
     header: {
-        padding: 20,
+        paddingHorizontal: theme.spacing.lg,
+        paddingTop: theme.spacing.lg,
+        paddingBottom: theme.spacing.sm,
+    },
+    headerTitleRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 28,
-        fontWeight: '800',
-        color: theme.colors.textPrimary,
-    },
-    exportBtnText: {
-        color: theme.colors.accent,
-        fontSize: 14,
-        fontWeight: 'bold',
-        marginTop: 5,
-    },
-    addBtn: {
-        backgroundColor: theme.colors.accent,
-        paddingVertical: 8,
-        paddingHorizontal: 15,
-        borderRadius: 20,
-    },
-    addBtnText: {
-        color: theme.colors.background,
-        fontWeight: 'bold',
-    },
-    searchContainer: {
-        paddingHorizontal: 20,
-        paddingBottom: 15,
-    },
-    searchInput: {
-        backgroundColor: theme.colors.surface,
-        height: 48,
-        borderRadius: 12,
-        paddingHorizontal: 16,
-        fontSize: 16,
-        color: theme.colors.textPrimary,
-        borderWidth: 1,
-        borderColor: theme.colors.accent + '20',
-    },
-    list: {
-        padding: 15,
-        flexGrow: 1,
-    },
-    entryCard: {
-        backgroundColor: theme.colors.surface,
-        padding: 15,
-        borderRadius: 12,
-        marginBottom: 15,
-    },
-    cardHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 10,
-    },
-    cardEmoji: {
-        fontSize: 24,
-        marginRight: 12,
-    },
-    cardTitle: {
-        fontSize: 18,
+        fontSize: theme.typography.headerSize + 8,
         fontWeight: 'bold',
         color: theme.colors.textPrimary,
+        letterSpacing: -0.5,
     },
-    cardDate: {
-        fontSize: 12,
+    syncIconButton: {
+        padding: theme.spacing.xs,
+    },
+    customSyncIcon: {
+        width: 22,
+        height: 18,
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        opacity: 0.85,
+    },
+    syncLine: {
+        width: '100%',
+        height: 2,
+        backgroundColor: theme.colors.textPrimary,
+        borderRadius: 1,
+    },
+    syncLineShort: {
+        width: '65%',
+    },
+    headerSubtitle: {
         color: theme.colors.textSecondary,
-    },
-    cardPreview: {
-        color: theme.colors.textSecondary,
-        lineHeight: 20,
-    },
-    footer: {
-        paddingVertical: 10,
-        alignItems: 'center',
+        fontSize: 15,
+        marginTop: theme.spacing.sm,
+        fontWeight: '400',
     },
     versionText: {
         color: theme.colors.textSecondary,
         fontSize: 12,
         opacity: 0.5,
     },
+    searchContainer: {
+        paddingHorizontal: theme.spacing.lg,
+        paddingBottom: theme.spacing.md,
+        marginTop: theme.spacing.sm,
+    },
+    searchWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.surface,
+        height: 54,
+        borderRadius: 18,
+        paddingHorizontal: theme.spacing.md,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    searchIcon: {
+        fontSize: 16,
+        marginRight: 10,
+        opacity: 0.6,
+    },
+    searchInput: {
+        flex: 1,
+        height: '100%',
+        fontSize: theme.typography.bodySize,
+        color: theme.colors.textPrimary,
+    },
+    list: {
+        paddingHorizontal: theme.spacing.lg,
+        paddingTop: theme.spacing.sm,
+        paddingBottom: 100,
+    },
+    entryCard: {
+        backgroundColor: theme.colors.surface,
+        padding: theme.spacing.lg,
+        borderRadius: 24,
+        marginBottom: theme.spacing.md,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    cardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: theme.spacing.sm,
+    },
+    cardEmoji: {
+        fontSize: 34,
+        marginRight: theme.spacing.md,
+    },
+    cardHeaderMeta: {
+        flex: 1,
+        justifyContent: 'center',
+    },
+    cardTopDate: {
+        fontSize: 13,
+        color: theme.colors.textSecondary,
+        marginBottom: 2,
+    },
+    cardTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: theme.colors.textPrimary,
+    },
+    cardPreview: {
+        fontSize: 15,
+        color: theme.colors.textSecondary,
+        lineHeight: theme.typography.lineHeight,
+    },
+    floatingAddBtn: {
+        position: 'absolute',
+        bottom: 30,
+        right: theme.spacing.lg,
+        backgroundColor: theme.colors.accent,
+        width: 64,
+        height: 64,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+    },
+    floatingAddBtnText: {
+        color: theme.colors.background,
+        fontSize: 32,
+        fontWeight: '300',
+        marginTop: -2,
+    },
     modalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0,0,0,0.75)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     modalContent: {
         width: '85%',
         backgroundColor: theme.colors.surface,
-        borderRadius: 20,
-        padding: 20,
+        borderRadius: 28,
+        padding: theme.spacing.lg,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
     },
     modalTitle: {
         fontSize: 22,
         fontWeight: 'bold',
         color: theme.colors.textPrimary,
-        marginBottom: 20,
+        marginBottom: theme.spacing.lg,
         textAlign: 'center',
     },
     section: {
-        width: '100%'
+        width: '100%',
     },
     sectionTitle: {
-        fontSize: 16,
+        fontSize: 13,
         fontWeight: 'bold',
         color: theme.colors.textSecondary,
-        marginBottom: 10,
+        marginBottom: theme.spacing.sm,
         textTransform: 'uppercase',
+        letterSpacing: 1,
     },
     modalBtn: {
         backgroundColor: theme.colors.accent,
         width: '100%',
-        padding: 14,
-        borderRadius: 10,
-        marginBottom: 8,
+        padding: theme.spacing.md,
+        borderRadius: 14,
+        marginBottom: theme.spacing.sm,
         alignItems: 'center',
     },
     modalBtnText: {
-        color: 'white',
-        fontWeight: 'bold'
+        color: theme.colors.background,
+        fontWeight: 'bold',
+        fontSize: 15,
     },
     warningText: {
         fontSize: 11,
         color: theme.colors.error,
-        fontStyle: 'italic'
+        fontStyle: 'italic',
+        marginTop: 4,
     },
     infoText: {
         fontSize: 11,
         color: theme.colors.textSecondary,
         textAlign: 'center',
-        marginTop: 4,
+        marginTop: 6,
     },
 });
