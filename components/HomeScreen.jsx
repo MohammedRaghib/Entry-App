@@ -120,9 +120,20 @@ export default function HomeScreen({ navigation }) {
         } else {
             content = allEntries
                 .map(
-                    e =>
-                        `Date: ${new Date(e.date).toLocaleDateString()}\nTitle: ${e.title
-                        }\nMood: ${e.mood}\n\n${e.body}\n\n---`,
+                    e => {
+                        const dateObj = new Date(e.date);
+                        const dateString = dateObj.toLocaleDateString('en-GB', {
+                            weekday: 'short',
+                            day: 'numeric',
+                            month: 'short',
+                        });
+                        const timeString = dateObj.toLocaleTimeString('en-US', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                        });
+                        return `Date: ${dateString}, ${timeString}\nTitle: ${e.title}\nMood: ${e.mood}\n\n${e.body}\n\n---`;
+                    }
                 )
                 .join('\n\n');
         }
@@ -147,6 +158,20 @@ export default function HomeScreen({ navigation }) {
 
     const renderItem = ({ item }) => {
         const moodsMap = { sad: '😭', neutral: '😐', happy: '🙂', excited: '😎' };
+        const dateObj = new Date(item.date);
+
+        const formattedDate = dateObj.toLocaleDateString('en-GB', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+        });
+
+        const formattedTime = dateObj.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+        });
+
         return (
             <TouchableOpacity
                 style={styles.entryCard}
@@ -163,7 +188,7 @@ export default function HomeScreen({ navigation }) {
                     <View>
                         <Text style={styles.cardTitle}>{item.title || ''}</Text>
                         <Text style={styles.cardDate}>
-                            {new Date(item.date).toLocaleDateString()}
+                            {formattedDate}, {formattedTime}
                         </Text>
                     </View>
                 </View>
@@ -304,6 +329,7 @@ export default function HomeScreen({ navigation }) {
 
                         <TouchableOpacity
                             style={[
+                                bg = { backgroundColor: theme.colors.error, marginTop: 30 },
                                 styles.modalBtn,
                                 { backgroundColor: theme.colors.error, marginTop: 30 },
                             ]}

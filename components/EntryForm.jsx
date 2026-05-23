@@ -157,6 +157,7 @@ export default function EntryForm({ route, navigation }) {
                             {date.toLocaleTimeString([], {
                                 hour: '2-digit',
                                 minute: '2-digit',
+                                hour12: true,
                             })}
                         </Text>
                         <Ionicons
@@ -261,7 +262,7 @@ export default function EntryForm({ route, navigation }) {
                     <DateTimePicker
                         value={date}
                         mode={pickerMode}
-                        is24Hour={true}
+                        is24Hour={false}
                         onChange={handleDateChange}
                     />
                 )}
