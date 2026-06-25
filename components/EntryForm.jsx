@@ -139,31 +139,15 @@ export default function EntryForm({ route, navigation }) {
                 onLayout={handleScrollViewLayout}
                 nestedScrollEnabled={true}
             >
-                <View style={styles.headerRow}>
+                <View style={styles.topNavigationRow}>
                     <TouchableOpacity
-                        onPress={() => {
-                            setPickerMode('date');
-                            setShowPicker(true);
-                        }}
-                        style={styles.dateSelector}
+                        onPress={() => navigation.goBack()}
+                        style={styles.backNavigationBtn}
                     >
-                        <Text style={styles.dateText}>
-                            {date.toLocaleDateString('en-GB', {
-                                day: '2-digit',
-                                month: 'short',
-                                year: 'numeric',
-                            })}
-                            ,{' '}
-                            {date.toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                hour12: true,
-                            })}
-                        </Text>
                         <Ionicons
-                            name="chevron-down"
-                            size={16}
-                            color={theme.colors.textSecondary}
+                            name="chevron-back"
+                            size={28}
+                            color={theme.colors.textPrimary}
                         />
                     </TouchableOpacity>
 
@@ -177,14 +161,37 @@ export default function EntryForm({ route, navigation }) {
                                 />
                             </TouchableOpacity>
                         )}
-                        <TouchableOpacity onPress={() => handleSave(true)}>
-                            <Ionicons
-                                name="checkmark-sharp"
-                                size={28}
-                                color={isDirty ? theme.colors.accent : theme.colors.textSecondary}
-                            />
-                        </TouchableOpacity>
                     </View>
+                </View>
+
+                <View style={styles.dateRowContainer}>
+                    <TouchableOpacity
+                        onPress={() => {
+                            setPickerMode('date');
+                            setShowPicker(true);
+                        }}
+                        style={styles.dateSelector}
+                    >
+                        <Text style={styles.dateText}>
+                            {date.toLocaleDateString('en-GB', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                            })}
+                            ,{' '}
+                            {date.toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true,
+                            })}
+                        </Text>
+                        <Ionicons
+                            name="caret-down-sharp"
+                            size={14}
+                            color={theme.colors.textSecondary}
+                            style={styles.dropdownCaret}
+                        />
+                    </TouchableOpacity>
                 </View>
 
                 <TouchableOpacity
@@ -278,23 +285,41 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         paddingHorizontal: theme.spacing.lg,
-        paddingTop: theme.spacing.lg,
+        paddingTop: theme.spacing.md,
         paddingBottom: 40,
     },
-    headerRow: {
+    topNavigationRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: theme.spacing.lg,
+        height: 48,
+    },
+    backNavigationBtn: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: 40,
+        height: 40,
+        marginLeft: -8,
+    },
+    dateRowContainer: {
+        flexDirection: 'row',
         alignItems: 'center',
         marginBottom: theme.spacing.xl,
     },
     dateSelector: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
     },
     dateText: {
         color: theme.colors.textPrimary,
-        fontSize: 16,
+        fontSize: 22,
+        fontWeight: '400',
+    },
+    dropdownCaret: {
+        marginLeft: 6,
+        marginTop: 4,
+        opacity: 0.7,
     },
     actionIcons: {
         flexDirection: 'row',

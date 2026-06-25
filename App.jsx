@@ -138,7 +138,7 @@ export default function App() {
         <Stack.Screen
           name="Entry"
           component={EntryForm}
-          options={{ title: 'Write' }}
+          options={{ headerShown: false }}
         />
       </Stack.Navigator>
     </NavigationContainer>

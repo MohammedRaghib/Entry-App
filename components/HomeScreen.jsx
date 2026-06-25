@@ -10,6 +10,7 @@ import {
     Modal,
     ActivityIndicator,
     TextInput,
+    Animated,
 } from 'react-native';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
@@ -33,7 +34,10 @@ export default function HomeScreen({ navigation }) {
     const [refreshing, setRefreshing] = useState(false);
     const [hasMore, setHasMore] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
 
+    const searchAnim = useRef(new Animated.Value(0)).current;
+    const searchInputRef = useRef(null);
     const PAGE_SIZE = 15;
     const appVersion = DeviceInfo.getVersion();
     const typingTimeoutRef = useRef(null);
@@ -86,6 +90,31 @@ export default function HomeScreen({ navigation }) {
         setEntries(prev => prev.filter(e => e.id !== id));
     };
 
+    const groupEntriesByDay = (flatEntries) => {
+        const groups = [];
+        flatEntries.forEach(entry => {
+            const dateObj = new Date(entry.date);
+            const dayNum = dateObj.toLocaleDateString('en-US', { day: 'numeric' });
+            const monthStr = dateObj.toLocaleDateString('en-US', { month: 'short' });
+            const yearNum = dateObj.getFullYear();
+            const groupKey = `${dayNum}-${monthStr}-${yearNum}`;
+
+            const existingGroup = groups.find(g => g.groupKey === groupKey);
+            if (existingGroup) {
+                existingGroup.records.push(entry);
+            } else {
+                groups.push({
+                    groupKey,
+                    dayNum,
+                    monthStr,
+                    yearNum,
+                    records: [entry]
+                });
+            }
+        });
+        return groups;
+    };
+
     const handleImport = async () => {
         try {
             const [res] = await pick({
@@ -118,7 +147,7 @@ export default function HomeScreen({ navigation }) {
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const year = String(now.getFullYear()).slice(-2);
         let fileName = `Export as of ${day}-${month}-${year}`;
-        
+
         let extension = type === 'json' ? '.json' : '.txt';
 
         if (type === 'json') {
@@ -162,44 +191,84 @@ export default function HomeScreen({ navigation }) {
         }
     };
 
+    const toggleSearchMode = (activate) => {
+        if (activate) {
+            setIsSearching(true);
+            Animated.timing(searchAnim, {
+                toValue: 1,
+                duration: 200,
+                useNativeDriver: false,
+            }).start(() => {
+                searchInputRef.current?.focus();
+            });
+        } else {
+            setSearchQuery('');
+            Animated.timing(searchAnim, {
+                toValue: 0,
+                duration: 180,
+                useNativeDriver: false,
+            }).start(() => {
+                setIsSearching(false);
+            });
+        }
+    };
+
     const renderItem = ({ item }) => {
         const moodsMap = { sad: '😭', neutral: '😐', happy: '🙂', excited: '😎' };
-        const dateObj = new Date(item.date);
-
-        const absoluteDay = dateObj.toLocaleDateString('en-US', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'short',
-        });
-
-        const formattedTime = dateObj.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true,
-        });
 
         return (
-            <TouchableOpacity
-                style={styles.entryCard}
-                onPress={() =>
-                    navigation.navigate('Entry', {
-                        editingEntry: item,
-                        onSave: handleSaveEntry,
-                        onDelete: deleteEntry,
-                    })
-                }
-            >
-                <View style={styles.cardHeader}>
-                    <Text style={styles.cardEmoji}>{moodsMap[item.mood] || '😐'}</Text>
-                    <View style={styles.cardHeaderMeta}>
-                        <Text style={styles.cardTopDate}>{dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}, {formattedTime}</Text>
-                        {item.title && <Text style={styles.cardTitle}>{item.title}</Text>}
-                    </View>
+            <View style={styles.entryRow}>
+                <View style={styles.dateColumn}>
+                    <Text style={styles.dateDayText}>{item.dayNum}</Text>
+                    <Text style={styles.dateMonthText}>{item.monthStr}</Text>
+                    <Text style={styles.dateYearText}>{item.yearNum}</Text>
                 </View>
-                <Text numberOfLines={3} style={styles.cardPreview}>
-                    {item.body}
-                </Text>
-            </TouchableOpacity>
+
+                <View style={styles.verticalDivider} />
+
+                <View style={styles.contentColumn}>
+                    {item.records.map((record, index) => {
+                        const dateObj = new Date(record.date);
+                        const formattedTime = dateObj.toLocaleTimeString('en-US', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                        });
+
+                        return (
+                            <View key={record.id}>
+                                <TouchableOpacity
+                                    onPress={() =>
+                                        navigation.navigate('Entry', {
+                                            editingEntry: record,
+                                            onSave: handleSaveEntry,
+                                            onDelete: deleteEntry,
+                                        })
+                                    }
+                                    style={styles.clickableInnerRecord}
+                                >
+                                    <View style={styles.contentHeaderRow}>
+                                        <Text style={styles.timeText}>{formattedTime}</Text>
+                                    </View>
+
+                                    {record.title ? <Text style={styles.entryTitleText}>{record.title}</Text> : null}
+
+                                    <View style={styles.bodyContextRow}>
+                                        <Text style={styles.moodEmojiInline}>{moodsMap[record.mood] || '😐'}</Text>
+                                        <Text numberOfLines={3} style={styles.bodyPreviewText}>
+                                            {record.body}
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+
+                                {index < item.records.length - 1 && (
+                                    <View style={styles.innerRecordSeparator} />
+                                )}
+                            </View>
+                        );
+                    })}
+                </View>
+            </View>
         );
     };
 
@@ -224,50 +293,103 @@ export default function HomeScreen({ navigation }) {
         setup();
     }, []);
 
+    const normalHeaderY = searchAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, -60],
+    });
+
+    const searchBarY = searchAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [-60, 0],
+    });
+
+    const headerOpacity = searchAnim.interpolate({
+        inputRange: [0, 0.5, 1],
+        outputRange: [1, 0, 0],
+    });
+
+    const searchOpacity = searchAnim.interpolate({
+        inputRange: [0, 0.5, 1],
+        outputRange: [0, 0, 1],
+    });
+
+    const groupedData = groupEntriesByDay(entries);
+
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <View>
+            <View style={styles.headerContainerSpace}>
+                <Animated.View
+                    style={[
+                        styles.header,
+                        {
+                            transform: [{ translateY: normalHeaderY }],
+                            opacity: headerOpacity,
+                            position: isSearching ? 'absolute' : 'relative',
+                            left: isSearching ? 0 : undefined,
+                            right: isSearching ? 0 : undefined,
+                        }
+                    ]}
+                >
                     <View style={styles.headerTitleRow}>
-                        <Text style={styles.headerTitle}>Hello!</Text>
-                        <TouchableOpacity style={styles.syncIconButton} onPress={() => setModalVisible(true)}>
-                            <View style={styles.customSyncIcon}>
-                                <View style={styles.syncLine} />
-                                <View style={[styles.syncLine, styles.syncLineShort]} />
-                                <View style={styles.syncLine} />
-                            </View>
-                        </TouchableOpacity>
+                        <View style={styles.titleContainer}>
+                            <Text style={styles.headerTitle}>Diary</Text>
+                            <Text style={styles.versionText}>v{appVersion}</Text>
+                        </View>
+                        <View style={styles.actionHeaderRow}>
+                            <TouchableOpacity style={styles.manageDataButton} onPress={() => setModalVisible(true)}>
+                                <View style={styles.customSyncIcon}>
+                                    <View style={styles.syncLine} />
+                                    <View style={styles.syncLineShort} />
+                                    <View style={styles.syncLine} />
+                                </View>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.searchIconButton} onPress={() => toggleSearchMode(true)}>
+                                <Text style={styles.searchIconText}>🔍</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                    <Text style={styles.versionText}>Version {appVersion}</Text>
-                </View>
-            </View>
+                </Animated.View>
 
-            <View style={styles.searchContainer}>
-                <View style={styles.searchWrapper}>
-                    <Text style={styles.searchIcon}>🔍</Text>
+                <Animated.View
+                    style={[
+                        styles.animatedSearchHeader,
+                        {
+                            transform: [{ translateY: searchBarY }],
+                            opacity: searchOpacity,
+                            position: isSearching ? 'relative' : 'absolute',
+                            left: isSearching ? undefined : 0,
+                            right: isSearching ? undefined : 0,
+                        }
+                    ]}
+                >
+                    <TouchableOpacity onPress={() => toggleSearchMode(false)} style={styles.backButtonFrame}>
+                        <Text style={styles.backArrowIndicator}>←</Text>
+                    </TouchableOpacity>
                     <TextInput
-                        style={styles.searchInput}
-                        placeholder="Search entries..."
+                        ref={searchInputRef}
+                        style={styles.searchHeaderInput}
+                        placeholder="Search"
                         placeholderTextColor={theme.colors.textSecondary}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         clearButtonMode="while-editing"
                     />
-                </View>
+                </Animated.View>
             </View>
 
             <FlatList
-                data={entries}
-                keyExtractor={item => item.id}
+                data={groupedData}
+                keyExtractor={item => item.groupKey}
                 renderItem={renderItem}
                 contentContainerStyle={styles.list}
                 onEndReached={() => fetchEntries()}
                 onEndReachedThreshold={0.5}
                 refreshing={refreshing}
                 onRefresh={onRefresh}
+                ItemSeparatorComponent={() => <View style={styles.rowSeparator} />}
                 ListFooterComponent={() =>
                     loading && !refreshing ? (
-                        <ActivityIndicator style={{ margin: theme.spacing.lg }} color={theme.colors.accent} />
+                        <ActivityIndicator style={styles.loaderStyle} color={theme.colors.accent} />
                     ) : null
                 }
             />
@@ -312,20 +434,13 @@ export default function HomeScreen({ navigation }) {
                             </Text>
                         </View>
 
-                        <View style={[styles.section, { marginTop: theme.spacing.lg }]}>
+                        <View style={styles.modalSectionSpacing}>
                             <Text style={styles.sectionTitle}>Import</Text>
                             <TouchableOpacity
-                                style={[
-                                    styles.modalBtn,
-                                    {
-                                        backgroundColor: theme.colors.background,
-                                        borderWidth: 1,
-                                        borderColor: theme.colors.accent,
-                                    },
-                                ]}
+                                style={styles.modalImportBtn}
                                 onPress={handleImport}
                             >
-                                <Text style={[styles.modalBtnText, { color: theme.colors.accent }]}>
+                                <Text style={styles.modalImportBtnText}>
                                     Import JSON File
                                 </Text>
                             </TouchableOpacity>
@@ -335,7 +450,7 @@ export default function HomeScreen({ navigation }) {
                         </View>
 
                         <TouchableOpacity
-                            style={[styles.modalBtn, { backgroundColor: theme.colors.error, marginTop: theme.spacing.xl }]}
+                            style={styles.modalCancelBtn}
                             onPress={() => setModalVisible(false)}
                         >
                             <Text style={styles.modalBtnText}>Cancel</Text>
@@ -352,30 +467,49 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: theme.colors.background,
     },
+    headerContainerSpace: {
+        overflow: 'hidden',
+        height: 75,
+        justifyContent: 'center',
+    },
     header: {
         paddingHorizontal: theme.spacing.lg,
-        paddingTop: theme.spacing.lg,
-        paddingBottom: theme.spacing.sm,
+        height: 75,
+        justifyContent: 'center',
     },
     headerTitleRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
     },
+    titleContainer: {
+        flexDirection: 'column',
+    },
     headerTitle: {
-        fontSize: theme.typography.headerSize + 8,
+        fontSize: theme.typography.headerSize + 4,
         fontWeight: 'bold',
         color: theme.colors.textPrimary,
         letterSpacing: -0.5,
     },
-    syncIconButton: {
-        padding: theme.spacing.xs,
+    versionText: {
+        color: theme.colors.textSecondary,
+        fontSize: 11,
+        opacity: 0.6,
+        marginTop: -2,
+    },
+    actionHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    manageDataButton: {
+        padding: theme.spacing.sm,
+        marginRight: theme.spacing.sm,
     },
     customSyncIcon: {
-        width: 22,
-        height: 18,
+        width: 20,
+        height: 15,
         justifyContent: 'space-between',
-        alignItems: 'flex-end',
+        alignItems: 'flex-start',
         opacity: 0.85,
     },
     syncLine: {
@@ -385,105 +519,150 @@ const styles = StyleSheet.create({
         borderRadius: 1,
     },
     syncLineShort: {
-        width: '65%',
+        width: '60%',
     },
-    headerSubtitle: {
-        color: theme.colors.textSecondary,
-        fontSize: 15,
-        marginTop: theme.spacing.sm,
-        fontWeight: '400',
+    searchIconButton: {
+        padding: theme.spacing.sm,
     },
-    versionText: {
-        color: theme.colors.textSecondary,
-        fontSize: 12,
-        opacity: 0.5,
+    searchIconText: {
+        fontSize: 20,
+        color: theme.colors.textPrimary,
     },
-    searchContainer: {
-        paddingHorizontal: theme.spacing.lg,
-        paddingBottom: theme.spacing.md,
-        marginTop: theme.spacing.sm,
-    },
-    searchWrapper: {
+    animatedSearchHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: theme.colors.surface,
-        height: 54,
-        borderRadius: 18,
-        paddingHorizontal: theme.spacing.md,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
+        paddingHorizontal: theme.spacing.lg,
+        height: 75,
     },
-    searchIcon: {
-        fontSize: 16,
-        marginRight: 10,
-        opacity: 0.6,
-    },
-    searchInput: {
-        flex: 1,
+    backButtonFrame: {
+        paddingRight: theme.spacing.md,
         height: '100%',
-        fontSize: theme.typography.bodySize,
+        justifyContent: 'center',
+    },
+    backArrowIndicator: {
+        fontSize: 24,
+        color: theme.colors.textSecondary,
+    },
+    searchHeaderInput: {
+        flex: 1,
+        height: 44,
+        fontSize: 18,
         color: theme.colors.textPrimary,
+        paddingVertical: 0,
     },
     list: {
         paddingHorizontal: theme.spacing.lg,
         paddingTop: theme.spacing.sm,
         paddingBottom: 100,
     },
-    entryCard: {
-        backgroundColor: theme.colors.surface,
-        padding: theme.spacing.lg,
-        borderRadius: 24,
-        marginBottom: theme.spacing.md,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
+    rowSeparator: {
+        height: 1,
+        backgroundColor: theme.colors.border,
+        marginVertical: theme.spacing.md,
     },
-    cardHeader: {
+    entryRow: {
+        flexDirection: 'row',
+        paddingVertical: theme.spacing.xs,
+    },
+    dateColumn: {
+        width: 50,
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+        paddingTop: theme.spacing.xs,
+    },
+    dateDayText: {
+        fontSize: 32,
+        fontWeight: '300',
+        color: theme.colors.textPrimary,
+        lineHeight: 36,
+    },
+    dateMonthText: {
+        fontSize: 14,
+        color: theme.colors.textSecondary,
+        textTransform: 'capitalize',
+        marginTop: 2,
+    },
+    dateYearText: {
+        fontSize: 11,
+        color: theme.colors.textSecondary,
+        opacity: 0.5,
+        marginTop: 2,
+    },
+    verticalDivider: {
+        width: 1,
+        backgroundColor: theme.colors.border,
+        marginHorizontal: theme.spacing.md,
+    },
+    contentColumn: {
+        flex: 1,
+        justifyContent: 'flex-start',
+    },
+    clickableInnerRecord: {
+        paddingVertical: 4,
+    },
+    innerRecordSeparator: {
+        height: 1,
+        backgroundColor: theme.colors.border,
+        opacity: 0.4,
+        marginVertical: 12,
+        borderStyle: 'dashed',
+    },
+    contentHeaderRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: theme.spacing.sm,
+        marginBottom: 4,
     },
-    cardEmoji: {
-        fontSize: 34,
-        marginRight: theme.spacing.md,
-    },
-    cardHeaderMeta: {
-        flex: 1,
-        justifyContent: 'center',
-    },
-    cardTopDate: {
-        fontSize: 13,
+    timeText: {
+        fontSize: 12,
         color: theme.colors.textSecondary,
-        marginBottom: 2,
+        opacity: 0.7,
     },
-    cardTitle: {
-        fontSize: 18,
-        fontWeight: '700',
+    entryTitleText: {
+        fontSize: 16,
+        fontWeight: '600',
         color: theme.colors.textPrimary,
+        marginBottom: 6,
     },
-    cardPreview: {
-        fontSize: 15,
+    bodyContextRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        flexWrap: 'wrap',
+    },
+    moodEmojiInline: {
+        fontSize: 18,
+        marginRight: 8,
+        marginTop: 2,
+    },
+    bodyPreviewText: {
+        flex: 1,
+        fontSize: 14,
         color: theme.colors.textSecondary,
-        lineHeight: theme.typography.lineHeight,
+        lineHeight: 20,
+    },
+    loaderStyle: {
+        margin: theme.spacing.lg,
     },
     floatingAddBtn: {
         position: 'absolute',
         bottom: 30,
         right: theme.spacing.lg,
-        backgroundColor: theme.colors.accent,
-        width: 64,
-        height: 64,
-        borderRadius: 22,
+        backgroundColor: theme.colors.surface,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
         justifyContent: 'center',
         alignItems: 'center',
-        elevation: 8,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        elevation: 4,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 3,
     },
     floatingAddBtnText: {
-        color: theme.colors.background,
-        fontSize: 32,
+        color: theme.colors.textPrimary,
+        fontSize: 28,
         fontWeight: '300',
         marginTop: -2,
     },
@@ -496,13 +675,13 @@ const styles = StyleSheet.create({
     modalContent: {
         width: '85%',
         backgroundColor: theme.colors.surface,
-        borderRadius: 28,
+        borderRadius: 20,
         padding: theme.spacing.lg,
         borderWidth: 1,
         borderColor: theme.colors.border,
     },
     modalTitle: {
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: 'bold',
         color: theme.colors.textPrimary,
         marginBottom: theme.spacing.lg,
@@ -512,7 +691,7 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     sectionTitle: {
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: 'bold',
         color: theme.colors.textSecondary,
         marginBottom: theme.spacing.sm,
@@ -523,25 +702,52 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.accent,
         width: '100%',
         padding: theme.spacing.md,
-        borderRadius: 14,
+        borderRadius: 10,
         marginBottom: theme.spacing.sm,
         alignItems: 'center',
     },
     modalBtnText: {
         color: theme.colors.background,
         fontWeight: 'bold',
-        fontSize: 15,
+        fontSize: 14,
     },
     warningText: {
         fontSize: 11,
         color: theme.colors.error,
         fontStyle: 'italic',
-        marginTop: 4,
+        marginTop: 2,
+    },
+    modalSectionSpacing: {
+        width: '100%',
+        marginTop: theme.spacing.lg,
+    },
+    modalImportBtn: {
+        backgroundColor: theme.colors.background,
+        borderWidth: 1,
+        borderColor: theme.colors.accent,
+        width: '100%',
+        padding: theme.spacing.md,
+        borderRadius: 10,
+        marginBottom: theme.spacing.sm,
+        alignItems: 'center',
+    },
+    modalImportBtnText: {
+        color: theme.colors.accent,
+        fontWeight: 'bold',
+        fontSize: 14,
     },
     infoText: {
         fontSize: 11,
         color: theme.colors.textSecondary,
         textAlign: 'center',
-        marginTop: 6,
+        marginTop: 4,
+    },
+    modalCancelBtn: {
+        backgroundColor: theme.colors.error,
+        width: '100%',
+        padding: theme.spacing.md,
+        borderRadius: 10,
+        marginTop: theme.spacing.xl,
+        alignItems: 'center',
     },
 });
