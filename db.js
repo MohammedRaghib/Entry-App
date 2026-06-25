@@ -63,9 +63,21 @@ const MIGRATIONS = {
       'CREATE TABLE IF NOT EXISTS entries (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, body TEXT, mood_id INTEGER, date TEXT)',
     );
   },
+  2: () => {
+    db.execute(`
+      CREATE TABLE IF NOT EXISTS attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_id INTEGER,
+        filename TEXT,
+        FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
+      )
+    `);
+  },
 };
 
 export const initDB = () => {
+  db.execute('PRAGMA foreign_keys = ON;');
+
   let currentVersionResult = db.execute('PRAGMA user_version');
   let currentVersion = currentVersionResult.rows?._array[0]?.user_version || 0;
 
@@ -165,4 +177,26 @@ export const importMoods = (mood) => {
   
   const result = db.execute('SELECT id FROM moods WHERE name = ?', [mood.name]);
   return result.rows?._array[0]?.id;
+};
+
+export const importAttachment = (attachment) => {
+  db.execute(
+    'INSERT OR IGNORE INTO attachments (entry_id, filename) VALUES (?, ?)',
+    [attachment.entry_id, attachment.filename]
+  );
+  
+  const result = db.execute(
+    'SELECT id FROM attachments WHERE entry_id = ? AND filename = ?', 
+    [attachment.entry_id, attachment.filename]
+  );
+  return result.rows?._array[0]?.id;
+};
+
+export const getAttachmentsForEntry = (entryId) => {
+  const result = db.execute('SELECT filename FROM attachments WHERE entry_id = ?', [entryId]);
+  return result.rows?._array.map(a => a.filename) || [];
+};
+
+export const removeAttachment = (Id) => {
+  db.execute('DELETE FROM attachments WHERE id = ?', [Id]);
 };
