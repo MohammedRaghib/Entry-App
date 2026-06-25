@@ -2,10 +2,10 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Alert, Animated, Easing } from 'react-native';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
+import { zip, unzip } from 'react-native-zip-archive';
 import { pick, types, isCancel } from '@react-native-documents/picker';
 import { theme } from '../constants/Theme';
-import { getAllEntriesForExport, importEntries } from '../db';
-import { setSystemShareActiveFlag } from './LockScreen';
+import { getAllEntriesForExport, getAllMoods, importEntries, importMoods } from '../db';
 
 export default function DataManagementModal({ visible, onClose, onRefresh }) {
     const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -17,7 +17,6 @@ export default function DataManagementModal({ visible, onClose, onRefresh }) {
                 Animated.timing(fadeAnim, {
                     toValue: 1,
                     duration: 220,
-                    easing: Easing.out(Easing.quad),
                     useNativeDriver: true,
                 }),
                 Animated.timing(scaleAnim, {
@@ -35,13 +34,11 @@ export default function DataManagementModal({ visible, onClose, onRefresh }) {
             Animated.timing(fadeAnim, {
                 toValue: 0,
                 duration: 180,
-                easing: Easing.in(Easing.quad),
                 useNativeDriver: true,
             }),
             Animated.timing(scaleAnim, {
                 toValue: 0.95,
                 duration: 180,
-                easing: Easing.in(Easing.quad),
                 useNativeDriver: true,
             }),
         ]).start(() => {
@@ -50,79 +47,151 @@ export default function DataManagementModal({ visible, onClose, onRefresh }) {
     };
 
     const handleImport = async () => {
+        const scratchPath = `${RNFS.TemporaryDirectoryPath}/import_scratch`;
         try {
-            setSystemShareActiveFlag(true);
-            const [res] = await pick({
-                type: [types.json],
-            });
-            const fileContent = await RNFS.readFile(res.uri, 'utf8');
-            const importedData = JSON.parse(fileContent);
+            const [res] = await pick({ type: [types.zip] });
 
-            if (Array.isArray(importedData)) {
-                importEntries(importedData);
-                Alert.alert('Success', 'Journal entries imported successfully.');
-                handleClose();
-                onRefresh();
-            } else {
-                throw new Error('Invalid format');
+            if (await RNFS.exists(scratchPath)) {
+                await RNFS.unlink(scratchPath);
             }
+            await RNFS.mkdir(scratchPath);
+
+            await unzip(res.uri, scratchPath);
+
+            const manifestPath = `${scratchPath}/backup_manifest.json`;
+            if (!(await RNFS.exists(manifestPath))) {
+                throw new Error('Missing manifest');
+            }
+
+            const manifestContent = await RNFS.readFile(manifestPath, 'utf8');
+            const archive = JSON.parse(manifestContent);
+
+            if (!archive.entries || !archive.moods) {
+                throw new Error('Malformed backup structure');
+            }
+
+            const localMoods = getAllMoods();
+            const moodIdMap = {};
+
+            for (const importedMood of archive.moods) {
+                const existing = localMoods.find(m => m.name === importedMood.name || m.emoji === importedMood.emoji);
+                if (existing) {
+                    moodIdMap[importedMood.id] = existing.id;
+                } else {
+                    const newId = importMoods({ emoji: importedMood.emoji, name: importedMood.name });
+                    moodIdMap[importedMood.id] = newId;
+                }
+            }
+
+            const permanentAttachmentsDir = `${RNFS.DocumentDirectoryPath}/attachments`;
+            if (!(await RNFS.exists(permanentAttachmentsDir))) {
+                await RNFS.mkdir(permanentAttachmentsDir);
+            }
+
+            const scratchAttachmentsPath = `${scratchPath}/attachments`;
+            if (await RNFS.exists(scratchAttachmentsPath)) {
+                const files = await RNFS.readDir(scratchAttachmentsPath);
+                for (const file of files) {
+                    if (file.isFile()) {
+                        const targetPath = `${permanentAttachmentsDir}/${file.name}`;
+                        if (await RNFS.exists(targetPath)) {
+                            await RNFS.unlink(targetPath);
+                        }
+                        await RNFS.copyFile(file.path, targetPath);
+                    }
+                }
+            }
+
+            const normalizedEntries = archive.entries.map(entry => ({
+                ...entry,
+                mood_id: moodIdMap[entry.mood_id] || entry.mood_id,
+                attachments: JSON.stringify(entry.attachments || [])
+            }));
+
+            importEntries(normalizedEntries);
+
+            Alert.alert('Success', 'Journal data and attachments restored successfully.');
+            handleClose();
+            onRefresh();
         } catch (err) {
-            setSystemShareActiveFlag(false);
             if (!isCancel(err)) {
-                Alert.alert('Import Error', 'Please select a valid JSON journal file.');
+                Alert.alert('Import Error', 'Invalid backup file package.');
+            }
+        } finally {
+            if (await RNFS.exists(scratchPath)) {
+                await RNFS.unlink(scratchPath).catch(() => { });
             }
         }
     };
 
-    const handleExport = async type => {
-        const allEntries = getAllEntriesForExport();
-        let content = '';
-
-        const now = new Date();
-        const day = String(now.getDate()).padStart(2, '0');
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const year = String(now.getFullYear()).slice(-2);
-        let fileName = `Export as of ${day}-${month}-${year}`;
-        let extension = type === 'json' ? '.json' : '.txt';
-
-        if (type === 'json') {
-            content = JSON.stringify(allEntries, null, 2);
-        } else {
-            content = allEntries
-                .map(e => {
-                    const dateObj = new Date(e.date);
-                    const dateString = dateObj.toLocaleDateString('en-GB', {
-                        weekday: 'short',
-                        day: 'numeric',
-                        month: 'short',
-                    });
-                    const timeString = dateObj.toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: true,
-                    });
-                    return `Date: ${dateString}, ${timeString}\nTitle: ${e.title}\nMood: ${e.mood}\n\n${e.body}\n\n---`;
-                })
-                .join('\n\n');
-        }
-
-        const path = `${RNFS.TemporaryDirectoryPath}/${fileName}${extension}`;
+    const handleExport = async () => {
+        const stagingPath = `${RNFS.TemporaryDirectoryPath}/export_staging`;
+        const zipPath = `${RNFS.TemporaryDirectoryPath}/Journal_Backup.zip`;
 
         try {
-            await RNFS.writeFile(path, content, 'utf8');
-            setSystemShareActiveFlag(true);
+            if (await RNFS.exists(stagingPath)) await RNFS.unlink(stagingPath);
+            if (await RNFS.exists(zipPath)) await RNFS.unlink(zipPath);
+
+            await RNFS.mkdir(stagingPath);
+            await RNFS.mkdir(`${stagingPath}/attachments`);
+
+            const dbEntries = getAllEntriesForExport();
+            const dbMoods = getAllMoods();
+
+            const processedEntries = dbEntries.map(e => {
+                let parsedAttachments = [];
+                try {
+                    parsedAttachments = typeof e.attachments === 'string' ? JSON.parse(e.attachments) : (e.attachments || []);
+                } catch {
+                    parsedAttachments = [];
+                }
+                return {
+                    id: e.id,
+                    title: e.title,
+                    body: e.body,
+                    mood_id: e.mood_id,
+                    date: e.date,
+                    attachments: parsedAttachments
+                };
+            });
+
+            const manifest = {
+                version: 1,
+                exported_at: new Date().toISOString(),
+                moods: dbMoods.map(m => ({ id: m.id, emoji: m.emoji, name: m.name })),
+                entries: processedEntries
+            };
+
+            await RNFS.writeFile(`${stagingPath}/backup_manifest.json`, JSON.stringify(manifest, null, 2), 'utf8');
+
+            const permanentAttachmentsDir = `${RNFS.DocumentDirectoryPath}/attachments`;
+            for (const entry of processedEntries) {
+                for (const fileName of entry.attachments) {
+                    const sourcePath = `${permanentAttachmentsDir}/${fileName}`;
+                    if (await RNFS.exists(sourcePath)) {
+                        await RNFS.copyFile(sourcePath, `${stagingPath}/attachments/${fileName}`);
+                    }
+                }
+            }
+
+            await zip(stagingPath, zipPath);
+
             await Share.open({
-                title: 'Export Journal',
-                url: `file://${path}`,
-                type: type === 'json' ? 'application/json' : 'text/plain',
+                title: 'Export Journal Archive',
+                url: `file://${zipPath}`,
+                type: 'application/zip',
                 saveToFiles: true,
             });
+
             handleClose();
         } catch (error) {
-            setSystemShareActiveFlag(false);
+            console.error(error);
             if (error.message !== 'User did not share') {
-                Alert.alert('Error', 'Could not export file.');
+                Alert.alert('Error', 'Could not compile the archive package.');
             }
+        } finally {
+            if (await RNFS.exists(stagingPath)) await RNFS.unlink(stagingPath).catch(() => { });
+            if (await RNFS.exists(zipPath)) await RNFS.unlink(zipPath).catch(() => { });
         }
     };
 
@@ -140,33 +209,22 @@ export default function DataManagementModal({ visible, onClose, onRefresh }) {
                     onPress={handleClose}
                 />
 
-                <Animated.View
-                    style={[
-                        styles.modalContent,
-                        { transform: [{ scale: scaleAnim }] }
-                    ]}
-                >
+                <Animated.View style={[styles.modalContent, { transform: [{ scale: scaleAnim }] }]}>
                     <Text style={styles.modalTitle}>Manage Data</Text>
 
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Export Options</Text>
-                        <TouchableOpacity style={styles.modalBtn} onPress={() => handleExport('json')}>
-                            <Text style={styles.modalBtnText}>Backup Data (JSON)</Text>
-                            <Text style={styles.btnSubText}>Complete transferrable archive file</Text>
+                        <TouchableOpacity style={styles.modalBtn} onPress={handleExport}>
+                            <Text style={styles.modalBtnText}>Backup Data & Media (ZIP)</Text>
+                            <Text style={styles.btnSubText}>Complete transferable archive container</Text>
                         </TouchableOpacity>
-
-                        <TouchableOpacity style={[styles.modalBtn, styles.secondaryButtonVariant]} onPress={() => handleExport('txt')}>
-                            <Text style={styles.modalBtnTextSecondary}>Export Plain Text (TXT)</Text>
-                            <Text style={styles.btnSubTextSecondary}>Human readable file format</Text>
-                        </TouchableOpacity>
-                        <Text style={styles.warningText}>⚠️ Plain text exports cannot be imported back.</Text>
                     </View>
 
                     <View style={styles.modalSectionSpacing}>
                         <Text style={styles.sectionTitle}>Import Options</Text>
                         <TouchableOpacity style={styles.modalImportBtn} onPress={handleImport}>
-                            <Text style={styles.modalImportBtnText}>Restore Backup File</Text>
-                            <Text style={styles.btnSubTextImport}>Select a previously exported .json archive</Text>
+                            <Text style={styles.modalImportBtnText}>Restore Backup Package</Text>
+                            <Text style={styles.btnSubTextImport}>Select a previously exported .zip bundle</Text>
                         </TouchableOpacity>
                     </View>
 
@@ -227,21 +285,10 @@ const styles = StyleSheet.create({
         paddingVertical: 14,
         paddingHorizontal: 16,
         borderRadius: 14,
-        marginBottom: 10,
         alignItems: 'flex-start',
-    },
-    secondaryButtonVariant: {
-        backgroundColor: 'transparent',
-        borderWidth: 1,
-        borderColor: theme.colors.border,
     },
     modalBtnText: {
         color: theme.colors.background,
-        fontWeight: '600',
-        fontSize: 15,
-    },
-    modalBtnTextSecondary: {
-        color: theme.colors.textPrimary,
         fontWeight: '600',
         fontSize: 15,
     },
@@ -250,19 +297,6 @@ const styles = StyleSheet.create({
         fontSize: 11,
         opacity: 0.8,
         marginTop: 2,
-    },
-    btnSubTextSecondary: {
-        color: theme.colors.textSecondary,
-        fontSize: 11,
-        opacity: 0.8,
-        marginTop: 2,
-    },
-    warningText: {
-        fontSize: 11,
-        color: theme.colors.error,
-        marginTop: 4,
-        paddingHorizontal: 4,
-        lineHeight: 14,
     },
     modalSectionSpacing: {
         width: '100%',

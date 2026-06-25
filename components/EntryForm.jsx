@@ -15,13 +15,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/Theme';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-
-const moods = [
-    { label: '😭', value: 'sad' },
-    { label: '😐', value: 'neutral' },
-    { label: '🙂', value: 'happy' },
-    { label: '😎', value: 'excited' },
-];
+import { getAllMoods } from '../db';
 
 export default function EntryForm({ route, navigation }) {
     const { onSave, onDelete, editingEntry } = route.params;
@@ -29,7 +23,8 @@ export default function EntryForm({ route, navigation }) {
     const titleRef = useRef(editingEntry?.title || '');
     const bodyRef = useRef(editingEntry?.body || '');
 
-    const [mood, setMood] = useState(editingEntry?.mood || 'neutral');
+    const [moodsList, setMoodsList] = useState([]);
+    const [moodId, setMoodId] = useState(editingEntry?.mood_id || 3);
     const [date, setDate] = useState(new Date(editingEntry?.date || Date.now()));
     const [showPicker, setShowPicker] = useState(false);
     const [pickerMode, setPickerMode] = useState('date');
@@ -39,24 +34,31 @@ export default function EntryForm({ route, navigation }) {
     const isDeleting = useRef(false);
     const scrollViewRef = useRef(null);
 
+    useEffect(() => {
+        try {
+            const data = getAllMoods();
+            setMoodsList(data);
+        } catch (error) {
+            Alert.alert('Error', 'Failed to load moods from database');
+        }
+    }, []);
+
     const handleScrollViewLayout = useCallback(() => {
         scrollViewRef.current?.scrollTo({ y: 0, animated: false });
     }, []);
 
     const handleSave = useCallback((shouldNavigate = true) => {
-        const entryId = editingEntry?.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
         onSave({
-            id: entryId,
+            id: editingEntry?.id || null,
             title: titleRef.current,
             body: bodyRef.current,
-            mood,
+            mood_id: moodId,
             date: date.toISOString(),
         });
 
         setIsDirty(false);
         if (shouldNavigate) navigation.goBack();
-    }, [editingEntry, mood, date, onSave, navigation]);
+    }, [editingEntry, moodId, date, onSave, navigation]);
 
     useEffect(() => {
         const handleBack = () => {
@@ -84,8 +86,8 @@ export default function EntryForm({ route, navigation }) {
         };
     }, [isDirty, handleSave, navigation]);
 
-    const handleMoodChange = useCallback((value) => {
-        setMood(value);
+    const handleMoodChange = useCallback((id) => {
+        setMoodId(id);
         setIsDirty(true);
         setIsMoodModalVisible(false);
     }, []);
@@ -124,7 +126,7 @@ export default function EntryForm({ route, navigation }) {
         }
     }, [date, pickerMode]);
 
-    const currentMoodLabel = moods.find(m => m.value === mood)?.label || '🙂';
+    const currentMoodLabel = moodsList.find(m => m.id === moodId)?.emoji || editingEntry?.mood_emoji || '😐';
 
     return (
         <KeyboardAvoidingView
@@ -246,18 +248,17 @@ export default function EntryForm({ route, navigation }) {
                         onPress={() => setIsMoodModalVisible(false)}
                     >
                         <View style={styles.modalContent}>
-                            <Text style={styles.modalTitle}>How are you feeling?</Text>
                             <View style={styles.moodGrid}>
-                                {moods.map(m => (
+                                {moodsList.map(m => (
                                     <TouchableOpacity
-                                        key={m.value}
+                                        key={m.id}
                                         style={[
                                             styles.moodOption,
-                                            mood === m.value && styles.selectedMood,
+                                            moodId === m.id && styles.selectedMood,
                                         ]}
-                                        onPress={() => handleMoodChange(m.value)}
+                                        onPress={() => handleMoodChange(m.id)}
                                     >
-                                        <Text style={styles.moodOptionEmoji}>{m.label}</Text>
+                                        <Text style={styles.moodOptionEmoji}>{m.emoji}</Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>

@@ -133,8 +133,6 @@ export default function HomeScreen({ navigation }) {
     };
 
     const renderItem = ({ item }) => {
-        const moodsMap = { sad: '😭', neutral: '😐', happy: '🙂', excited: '😎' };
-
         return (
             <View style={styles.entryRow}>
                 <View style={styles.dateColumn}>
@@ -173,7 +171,7 @@ export default function HomeScreen({ navigation }) {
                                     {record.title ? <Text style={styles.entryTitleText}>{record.title}</Text> : null}
 
                                     <View style={styles.bodyContextRow}>
-                                        <Text style={styles.moodEmojiInline}>{moodsMap[record.mood] || '😐'}</Text>
+                                        <Text style={styles.moodEmojiInline}>{record.mood_emoji || '😐'}</Text>
                                         <Text numberOfLines={3} style={styles.bodyPreviewText}>
                                             {record.body}
                                         </Text>
@@ -234,21 +232,26 @@ export default function HomeScreen({ navigation }) {
 
     const groupedData = groupEntriesByDay(entries);
 
+    const animatedHeaderStyle = {
+        transform: [{ translateY: normalHeaderY }],
+        opacity: headerOpacity,
+        position: isSearching ? 'absolute' : 'relative',
+        left: isSearching ? 0 : undefined,
+        right: isSearching ? 0 : undefined,
+    };
+
+    const animatedSearchStyle = {
+        transform: [{ translateY: searchBarY }],
+        opacity: searchOpacity,
+        position: isSearching ? 'relative' : 'absolute',
+        left: isSearching ? undefined : 0,
+        right: isSearching ? undefined : 0,
+    };
+
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.headerContainerSpace}>
-                <Animated.View
-                    style={[
-                        styles.header,
-                        {
-                            transform: [{ translateY: normalHeaderY }],
-                            opacity: headerOpacity,
-                            position: isSearching ? 'absolute' : 'relative',
-                            left: isSearching ? 0 : undefined,
-                            right: isSearching ? 0 : undefined,
-                        }
-                    ]}
-                >
+                <Animated.View style={[styles.header, animatedHeaderStyle]}>
                     <View style={styles.headerTitleRow}>
                         <View style={styles.titleContainer}>
                             <Text style={styles.headerTitle}>Diary</Text>
@@ -269,18 +272,7 @@ export default function HomeScreen({ navigation }) {
                     </View>
                 </Animated.View>
 
-                <Animated.View
-                    style={[
-                        styles.animatedSearchHeader,
-                        {
-                            transform: [{ translateY: searchBarY }],
-                            opacity: searchOpacity,
-                            position: isSearching ? 'relative' : 'absolute',
-                            left: isSearching ? undefined : 0,
-                            right: isSearching ? undefined : 0,
-                        }
-                    ]}
-                >
+                <Animated.View style={[styles.animatedSearchHeader, animatedSearchStyle]}>
                     <TouchableOpacity onPress={() => toggleSearchMode(false)} style={styles.backButtonFrame}>
                         <Text style={styles.backArrowIndicator}>←</Text>
                     </TouchableOpacity>

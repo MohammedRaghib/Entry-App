@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import HomeScreen from './components/HomeScreen';
+import TabNavigator from './components/TabNavigator';
 import EntryForm from './components/EntryForm';
-import LockScreen from './components/LockScreen';
+import LockScreen, { isSystemShareOpenGlobal } from './components/LockScreen';
 import { theme } from './constants/Theme';
 
 const Stack = createStackNavigator();
@@ -19,7 +19,9 @@ export default function App() {
         appStateRef.current === 'active' &&
         nextAppState.match(/inactive|background/)
       ) {
-        setIsAuthorized(false);
+        if (!isSystemShareOpenGlobal) {
+          setIsAuthorized(false);
+        }
       }
       appStateRef.current = nextAppState;
     });
@@ -49,7 +51,7 @@ export default function App() {
           </Stack.Screen>
         ) : (
           <>
-            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="MainTabs" component={TabNavigator} />
             <Stack.Screen name="Entry" component={EntryForm} />
           </>
         )}
