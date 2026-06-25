@@ -7,23 +7,18 @@ import {
     SafeAreaView,
     TouchableOpacity,
     Alert,
-    Modal,
     ActivityIndicator,
     TextInput,
     Animated,
 } from 'react-native';
-import RNFS from 'react-native-fs';
-import Share from 'react-native-share';
 import DeviceInfo from 'react-native-device-info';
-import { pick, types, isCancel } from '@react-native-documents/picker';
 import { theme } from '../constants/Theme';
+import DataManagementModal from './DataManagementModal';
 import {
     initDB,
     getEntriesPaginated,
     insertOrUpdateEntry,
     removeEntry,
-    getAllEntriesForExport,
-    importEntries,
 } from '../db';
 
 export default function HomeScreen({ navigation }) {
@@ -113,82 +108,6 @@ export default function HomeScreen({ navigation }) {
             }
         });
         return groups;
-    };
-
-    const handleImport = async () => {
-        try {
-            const [res] = await pick({
-                type: [types.json],
-            });
-            const fileContent = await RNFS.readFile(res.uri, 'utf8');
-            const importedData = JSON.parse(fileContent);
-
-            if (Array.isArray(importedData)) {
-                importEntries(importedData);
-                Alert.alert('Success', 'Journal entries imported successfully.');
-                setModalVisible(false);
-                onRefresh();
-            } else {
-                throw new Error('Invalid format');
-            }
-        } catch (err) {
-            if (!isCancel(err)) {
-                Alert.alert('Import Error', 'Please select a valid JSON journal file.');
-            }
-        }
-    };
-
-    const handleExport = async type => {
-        const allEntries = getAllEntriesForExport();
-        let content = '';
-
-        const now = new Date();
-        const day = String(now.getDate()).padStart(2, '0');
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const year = String(now.getFullYear()).slice(-2);
-        let fileName = `Export as of ${day}-${month}-${year}`;
-
-        let extension = type === 'json' ? '.json' : '.txt';
-
-        if (type === 'json') {
-            content = JSON.stringify(allEntries, null, 2);
-        } else {
-            content = allEntries
-                .map(
-                    e => {
-                        const dateObj = new Date(e.date);
-                        const dateString = dateObj.toLocaleDateString('en-GB', {
-                            weekday: 'short',
-                            day: 'numeric',
-                            month: 'short',
-                        });
-                        const timeString = dateObj.toLocaleTimeString('en-US', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true,
-                        });
-                        return `Date: ${dateString}, ${timeString}\nTitle: ${e.title}\nMood: ${e.mood}\n\n${e.body}\n\n---`;
-                    }
-                )
-                .join('\n\n');
-        }
-
-        const path = `${RNFS.TemporaryDirectoryPath}/${fileName}${extension}`;
-
-        try {
-            await RNFS.writeFile(path, content, 'utf8');
-            await Share.open({
-                title: 'Export Journal',
-                url: `file://${path}`,
-                type: type === 'json' ? 'application/json' : 'text/plain',
-                saveToFiles: true,
-            });
-            setModalVisible(false);
-        } catch (error) {
-            if (error.message !== 'User did not share') {
-                Alert.alert('Error', 'Could not export file.');
-            }
-        }
     };
 
     const toggleSearchMode = (activate) => {
@@ -401,63 +320,11 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.floatingAddBtnText}>+</Text>
             </TouchableOpacity>
 
-            <Modal
-                transparent
+            <DataManagementModal
                 visible={modalVisible}
-                animationType="fade"
-                onRequestClose={() => setModalVisible(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Manage Data</Text>
-
-                        <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Export</Text>
-                            <TouchableOpacity
-                                style={styles.modalBtn}
-                                onPress={() => handleExport('json')}
-                            >
-                                <Text style={styles.modalBtnText}>
-                                    Export as JSON (Full Backup)
-                                </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.modalBtn}
-                                onPress={() => handleExport('txt')}
-                            >
-                                <Text style={styles.modalBtnText}>
-                                    Export as TXT (Readable)
-                                </Text>
-                            </TouchableOpacity>
-                            <Text style={styles.warningText}>
-                                * TXT files cannot be imported back.
-                            </Text>
-                        </View>
-
-                        <View style={styles.modalSectionSpacing}>
-                            <Text style={styles.sectionTitle}>Import</Text>
-                            <TouchableOpacity
-                                style={styles.modalImportBtn}
-                                onPress={handleImport}
-                            >
-                                <Text style={styles.modalImportBtnText}>
-                                    Import JSON File
-                                </Text>
-                            </TouchableOpacity>
-                            <Text style={styles.infoText}>
-                                Only .json backup files are supported.
-                            </Text>
-                        </View>
-
-                        <TouchableOpacity
-                            style={styles.modalCancelBtn}
-                            onPress={() => setModalVisible(false)}
-                        >
-                            <Text style={styles.modalBtnText}>Cancel</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
+                onClose={() => setModalVisible(false)}
+                onRefresh={onRefresh}
+            />
         </SafeAreaView>
     );
 }
@@ -665,89 +532,5 @@ const styles = StyleSheet.create({
         fontSize: 28,
         fontWeight: '300',
         marginTop: -2,
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.75)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    modalContent: {
-        width: '85%',
-        backgroundColor: theme.colors.surface,
-        borderRadius: 20,
-        padding: theme.spacing.lg,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: theme.colors.textPrimary,
-        marginBottom: theme.spacing.lg,
-        textAlign: 'center',
-    },
-    section: {
-        width: '100%',
-    },
-    sectionTitle: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: theme.colors.textSecondary,
-        marginBottom: theme.spacing.sm,
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-    },
-    modalBtn: {
-        backgroundColor: theme.colors.accent,
-        width: '100%',
-        padding: theme.spacing.md,
-        borderRadius: 10,
-        marginBottom: theme.spacing.sm,
-        alignItems: 'center',
-    },
-    modalBtnText: {
-        color: theme.colors.background,
-        fontWeight: 'bold',
-        fontSize: 14,
-    },
-    warningText: {
-        fontSize: 11,
-        color: theme.colors.error,
-        fontStyle: 'italic',
-        marginTop: 2,
-    },
-    modalSectionSpacing: {
-        width: '100%',
-        marginTop: theme.spacing.lg,
-    },
-    modalImportBtn: {
-        backgroundColor: theme.colors.background,
-        borderWidth: 1,
-        borderColor: theme.colors.accent,
-        width: '100%',
-        padding: theme.spacing.md,
-        borderRadius: 10,
-        marginBottom: theme.spacing.sm,
-        alignItems: 'center',
-    },
-    modalImportBtnText: {
-        color: theme.colors.accent,
-        fontWeight: 'bold',
-        fontSize: 14,
-    },
-    infoText: {
-        fontSize: 11,
-        color: theme.colors.textSecondary,
-        textAlign: 'center',
-        marginTop: 4,
-    },
-    modalCancelBtn: {
-        backgroundColor: theme.colors.error,
-        width: '100%',
-        padding: theme.spacing.md,
-        borderRadius: 10,
-        marginTop: theme.spacing.xl,
-        alignItems: 'center',
     },
 });
