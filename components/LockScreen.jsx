@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, AppState } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import ReactNativeBiometrics from 'react-native-biometrics';
 import * as Keychain from 'react-native-keychain';
 import { theme } from '../constants/Theme';
@@ -10,21 +10,9 @@ const rnBiometrics = new ReactNativeBiometrics();
 export default function LockScreen({ onAuthSuccess }) {
     const [isSettingUp, setIsSettingUp] = useState(false);
     const [pin, setPin] = useState('');
-    const appStateRef = useRef(AppState.currentState);
 
     useEffect(() => {
         checkPinStatus();
-
-        const subscription = AppState.addEventListener('change', nextAppState => {
-            if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
-                checkPinStatus();
-            }
-            appStateRef.current = nextAppState;
-        });
-
-        return () => {
-            subscription.remove();
-        };
     }, []);
 
     const checkPinStatus = async () => {
