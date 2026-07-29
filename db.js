@@ -2,7 +2,7 @@ import { open } from 'react-native-quick-sqlite';
 
 const db = open({ name: 'Journal.db' });
 
-const TARGET_DB_VERSION = 1;
+const TARGET_DB_VERSION = 2;
 
 const MIGRATIONS = {
   1: () => {
