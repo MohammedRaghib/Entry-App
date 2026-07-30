@@ -15,7 +15,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/Theme';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { getAllMoods } from '../db';
+import { getAllMoods, getAttachmentsForEntry  } from '../db';
 
 export default function EntryForm({ route, navigation }) {
     const { onSave, onDelete, editingEntry } = route.params;
@@ -127,6 +127,14 @@ export default function EntryForm({ route, navigation }) {
     }, [date, pickerMode]);
 
     const currentMoodLabel = moodsList.find(m => m.id === moodId)?.emoji || editingEntry?.mood_emoji || '😐';
+    const [attachments, setAttachments] = useState([]);
+
+    useEffect(() => {
+        if (editingEntry?.id) {
+            const data = getAttachmentsForEntry(editingEntry.id);
+            setAttachments(data);
+        }
+    }, [editingEntry]);
 
     return (
         <KeyboardAvoidingView
